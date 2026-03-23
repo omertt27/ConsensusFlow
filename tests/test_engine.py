@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch
 
 from consensusflow.core.engine import (
     SequentialChain,

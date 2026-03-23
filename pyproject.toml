@@ -37,6 +37,10 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
 ]
+server = [
+    "fastapi>=0.104",
+    "uvicorn[standard]>=0.24",
+]
 
 [project.scripts]
 consensusflow = "consensusflow.cli:main"
@@ -67,6 +71,10 @@ ignore  = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths    = ["tests"]
+filterwarnings = [
+    # Suppress coroutine-not-awaited warnings from asyncio.run mock side-effects
+    "ignore::RuntimeWarning",
+]
 
 # ── Mypy ───────────────────────────────────────────────────────
 [tool.mypy]

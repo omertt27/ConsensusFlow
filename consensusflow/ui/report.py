@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Optional
 
 from consensusflow.core.protocol import ClaimStatus, ChainStatus, VerificationReport
 from consensusflow.core.scoring import compute_gotcha_score, compute_savings
@@ -67,7 +66,7 @@ def render_markdown(report: VerificationReport) -> str:
     chain_emoji = _CHAIN_STATUS_EMOJI.get(report.status, "❓")
     lines += [
         f"# {chain_emoji} ConsensusFlow Verification Report",
-        f"",
+        "",
         f"**Run ID:** `{report.run_id}`  ",
         f"**Status:** `{report.status.value}`  ",
         f"**Models:** {' → '.join(f'`{m}`' for m in report.chain_models)}  ",
@@ -104,8 +103,8 @@ def render_markdown(report: VerificationReport) -> str:
         lines += [
             "## 🔬 Claim-by-Claim Audit",
             "",
-            f"| # | Status | Claim | Note |",
-            f"|---|--------|-------|------|",
+            "| # | Status | Claim | Note |",
+            "|---|--------|-------|------|",
         ]
         for i, claim in enumerate(report.atomic_claims, 1):
             emoji  = _EMOJI.get(claim.status, "❓")
@@ -136,14 +135,14 @@ def render_markdown(report: VerificationReport) -> str:
         ]
 
     # ── Gotcha Score ─────────────────────────────────────────
-    gs = compute_gotcha_score(report)
+    gs = compute_gotcha_score(report, penalty_weights=report.penalty_weights)
     savings = compute_savings(report)
 
     lines += [
         "## 🎯 Gotcha Score",
         "",
-        f"| Metric | Value |",
-        f"|--------|-------|",
+        "| Metric | Value |",
+        "|--------|-------|",
         f"| **Score** | **{gs.score}/100** — {gs.label} {gs.emoji} |",
         f"| **Grade** | `{gs.grade}` |",
         f"| **Claims checked** | {gs.total_claims} |",
@@ -174,8 +173,8 @@ def render_markdown(report: VerificationReport) -> str:
         lines += [
             "## 💰 Cost & Savings",
             "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
+            "| Metric | Value |",
+            "|--------|-------|",
             f"| **Tokens used** | {savings.tokens_used:,} |",
         ]
         if savings.early_exit and savings.tokens_saved > 0:
@@ -279,7 +278,7 @@ def render_terminal(report: VerificationReport) -> str:
         ]
 
     # ── Gotcha Score ─────────────────────────────────────────
-    gs = compute_gotcha_score(report)
+    gs = compute_gotcha_score(report, penalty_weights=report.penalty_weights)
     savings = compute_savings(report)
 
     lines += [
@@ -324,7 +323,7 @@ def render_terminal(report: VerificationReport) -> str:
 
 def render_json(report: VerificationReport, indent: int = 2) -> str:
     """Serialise the full report (with Gotcha Score and Savings) as pretty-printed JSON."""
-    gs = compute_gotcha_score(report)
+    gs = compute_gotcha_score(report, penalty_weights=report.penalty_weights)
     savings = compute_savings(report)
     data = report.to_dict()
     data["gotcha_score"] = gs.to_dict()

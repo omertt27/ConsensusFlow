@@ -42,7 +42,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
 
 from consensusflow.core.protocol import AtomicClaim, ClaimStatus, VerificationReport
 
@@ -63,7 +62,7 @@ class FailureCategory(str, Enum):
 # Each tuple: (category, list-of-keyword-regexes).
 # Using word-boundary regexes reduces false positives compared to simple
 # substring matching (e.g. "now" as a standalone word vs. "known").
-_TAXONOMY_PATTERNS: List[Tuple[FailureCategory, List[str]]] = [
+_TAXONOMY_PATTERNS: list[tuple[FailureCategory, list[str]]] = [
     (FailureCategory.FABRICATION, [
         r"\bnever\b", r"\bdoes not exist\b", r"\binvented\b",
         r"\bfabricated\b", r"\bhallucin", r"\bno evidence\b",
@@ -104,7 +103,7 @@ def classify_failure(claim: AtomicClaim) -> FailureCategory:
 # Default penalty weights
 # ─────────────────────────────────────────────
 
-DEFAULT_PENALTIES: Dict[ClaimStatus, int] = {
+DEFAULT_PENALTIES: dict[ClaimStatus, int] = {
     ClaimStatus.VERIFIED:  0,
     ClaimStatus.NUANCED:   5,
     ClaimStatus.DISPUTED: 15,
@@ -122,7 +121,7 @@ _MAX_PENALTY_PER_CLAIM = DEFAULT_PENALTIES[ClaimStatus.REJECTED]
 
 # Keys are lowercase substrings matched against model names.
 # The first matching entry wins. Rates as of Q1 2026 (approximate).
-_PROVIDER_RATES: List[Tuple[str, float]] = [
+_PROVIDER_RATES: list[tuple[str, float]] = [
     # OpenAI
     ("gpt-4o",              0.010),   # ~$0.005 input + $0.015 output blended
     ("gpt-4-turbo",         0.020),
@@ -163,7 +162,7 @@ def _rate_for_model(model: str) -> float:
     return _DEFAULT_RATE
 
 
-def _estimate_cost_usd(tokens: int, chain: Optional[List[str]] = None) -> float:
+def _estimate_cost_usd(tokens: int, chain: list[str] | None = None) -> float:
     """
     Estimate USD cost for a token count, using blended chain rates if available.
     Falls back to the default rate when chain is not provided.
@@ -208,8 +207,8 @@ class GotchaScore:
     grade: str = "A+"
     label: str = "Fully Verified"
     emoji: str = "✅"
-    penalty_breakdown: Dict[str, int] = field(default_factory=dict)
-    failure_taxonomy: Dict[str, int] = field(default_factory=dict)
+    penalty_breakdown: dict[str, int] = field(default_factory=dict)
+    failure_taxonomy: dict[str, int] = field(default_factory=dict)
     total_claims: int = 0
     catches: int = 0
     share_text: str = ""
@@ -242,7 +241,7 @@ _GRADE_TABLE = [
 ]
 
 
-def _letter_grade(score: int) -> Tuple[str, str, str]:
+def _letter_grade(score: int) -> tuple[str, str, str]:
     for threshold, grade, label, emoji in _GRADE_TABLE:
         if score >= threshold:
             return grade, label, emoji
@@ -255,7 +254,7 @@ def _letter_grade(score: int) -> Tuple[str, str, str]:
 
 def compute_gotcha_score(
     report: VerificationReport,
-    penalty_weights: Optional[Dict[ClaimStatus, int]] = None,
+    penalty_weights: dict[ClaimStatus, int] | None = None,
 ) -> GotchaScore:
     """
     Compute the Gotcha Score for a completed VerificationReport.
@@ -284,8 +283,8 @@ def compute_gotcha_score(
 
     # ── Compute penalty ──────────────────────
     raw_penalty   = 0
-    penalty_by_status: Dict[str, int] = {}
-    taxonomy_counts: Dict[str, int]   = {}
+    penalty_by_status: dict[str, int] = {}
+    taxonomy_counts: dict[str, int]   = {}
     catches = 0
 
     for claim in claims:
@@ -381,7 +380,7 @@ class SavingsReport:
 
 def compute_savings(
     report: VerificationReport,
-    chain: Optional[List[str]] = None,
+    chain: list[str] | None = None,
 ) -> SavingsReport:
     """
     Compute token and cost savings for a VerificationReport.

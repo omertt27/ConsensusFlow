@@ -6,7 +6,6 @@ No API calls required.
 from __future__ import annotations
 
 import json
-import pytest
 
 from consensusflow.core.protocol import (
     AtomicClaim,

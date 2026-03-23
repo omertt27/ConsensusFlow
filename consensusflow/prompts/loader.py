@@ -11,14 +11,13 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-from typing import Dict
 
 _PROMPTS_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "prompts")
 )
 
 # Runtime overrides: name → content.  Checked before disk lookup.
-_OVERRIDES: Dict[str, str] = {}
+_OVERRIDES: dict[str, str] = {}
 
 
 def register_prompt_override(name: str, content: str) -> None:
@@ -66,7 +65,7 @@ def load_prompt(name: str) -> str:
         path = os.path.normpath(os.path.join(_PROMPTS_DIR, f"{name}{ext}"))
         searched.append(path)
         if os.path.isfile(path):
-            with open(path, "r", encoding="utf-8") as fh:
+            with open(path, encoding="utf-8") as fh:
                 return fh.read().strip()
 
     from consensusflow.exceptions import PromptNotFoundError

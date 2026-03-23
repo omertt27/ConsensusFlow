@@ -14,7 +14,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, AsyncIterator, Dict, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 log = logging.getLogger("consensusflow.litellm_client")
 
@@ -127,7 +128,7 @@ class LiteLLMClient:
 
         if _LITELLM_AVAILABLE:
             # Suppress verbose LiteLLM logging unless debug mode is on
-            litellm.set_verbose = os.getenv("CONSENSUSFLOW_DEBUG", "0") == "1"
+            litellm.set_verbose = os.getenv("CONSENSUSFLOW_DEBUG", "0") == "1"  # type: ignore[attr-defined]
             # Drop unsupported params silently (e.g. when swapping providers)
             litellm.drop_params = True
 
@@ -139,7 +140,7 @@ class LiteLLMClient:
         system: str,
         user: str,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Single async completion.
 
@@ -185,7 +186,7 @@ class LiteLLMClient:
                     temperature=self.temperature,
                     **kwargs,
                 )
-                async for chunk in response:
+                async for chunk in response:  # type: ignore[union-attr]
                     delta = chunk.choices[0].delta
                     content = getattr(delta, "content", None)
                     if content:
@@ -218,7 +219,7 @@ class LiteLLMClient:
         system: str,
         user: str,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if not _LITELLM_AVAILABLE:
             return {
                 "text": self._mock_response(user),
@@ -238,7 +239,7 @@ class LiteLLMClient:
             **kwargs,
         )
 
-        text = response.choices[0].message.content or ""
+        text = response.choices[0].message.content or ""  # type: ignore[union-attr]
         usage = getattr(response, "usage", None)
 
         return {

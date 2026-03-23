@@ -15,11 +15,10 @@ from __future__ import annotations
 
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 from consensusflow.core.engine import (
     SequentialChain,
-    _jaccard_similarity,
     _parse_audit_from_json,
     _parse_claims_from_json,
 )
@@ -232,7 +231,6 @@ class TestResolverFailureFallback:
     @pytest.mark.asyncio
     async def test_resolver_failure_uses_proposer_answer(self):
         chain = _make_chain()
-        call_count = {"n": 0}
 
         async def mock_complete(model, system, user, **_):
             if model.endswith("mini") or model == "gpt-4o-mini":
@@ -336,8 +334,9 @@ class TestStreaming:
                     done_events.append(event)
 
         assert len(done_events) == 1
-        assert isinstance(done_events[0]["data"], dict)
-        assert "run_id" in done_events[0]["data"]
+        # done event yields the VerificationReport object directly (not a dict)
+        assert isinstance(done_events[0]["data"], VerificationReport)
+        assert done_events[0]["data"].run_id != ""
 
 
 # ── JSON parse fallback ───────────────────────────────────────

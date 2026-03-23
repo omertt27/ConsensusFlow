@@ -3,7 +3,6 @@ test_protocol.py — Unit tests for protocol.py data structures.
 No API calls required.
 """
 
-import pytest
 from consensusflow.core.protocol import (
     AtomicClaim,
     ChainStatus,

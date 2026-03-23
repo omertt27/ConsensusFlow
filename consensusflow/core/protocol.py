@@ -138,6 +138,9 @@ class VerificationReport:
     total_tokens: int = 0
     total_latency_ms: float = 0.0
 
+    # Custom penalty weights forwarded from SequentialChain (optional)
+    penalty_weights: Optional[Dict] = None
+
     # ── Convenience helpers ──────────────────
 
     @property

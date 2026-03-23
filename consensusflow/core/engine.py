@@ -14,12 +14,11 @@ Supports:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
 import time
-from typing import AsyncIterator, Callable, Dict, List, Optional, Tuple
+from collections.abc import AsyncIterator, Callable
 
 from consensusflow.core.protocol import (
     AtomicClaim,
@@ -60,14 +59,15 @@ def _jaccard_similarity(text_a: str, text_b: str) -> float:
 # Claim Parser
 # ─────────────────────────────────────────────
 
-def _parse_claims_from_json(raw: str) -> List[AtomicClaim]:
+def _parse_claims_from_json(raw: str) -> list[AtomicClaim]:
     """
     Expects the claim-extractor model to return a JSON array such as:
         [{"text": "...", "confidence": 0.9}, ...]
     Falls back to line-splitting if JSON is malformed.
     """
-    # Try to strip markdown fences first
-    cleaned = re.sub(r"```(?:json)?", "", raw).strip().rstrip("```").strip()
+    # Strip markdown fences (```json ... ``` or ``` ... ```)
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+    cleaned = re.sub(r"\s*```$", "", cleaned).strip()
     try:
         data = json.loads(cleaned)
         if isinstance(data, list):
@@ -96,13 +96,15 @@ def _parse_claims_from_json(raw: str) -> List[AtomicClaim]:
     ]
 
 
-def _parse_audit_from_json(raw: str, original_claims: List[AtomicClaim]) -> List[AtomicClaim]:
+def _parse_audit_from_json(raw: str, original_claims: list[AtomicClaim]) -> list[AtomicClaim]:
     """
     Expects the Auditor to return a JSON array:
         [{"id": "...", "status": "CORRECTED", "text": "...", "note": "..."}]
     Merges back into the original claim list.
     """
-    cleaned = re.sub(r"```(?:json)?", "", raw).strip().rstrip("```").strip()
+    # Strip markdown fences (```json ... ``` or ``` ... ```)
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+    cleaned = re.sub(r"\s*```$", "", cleaned).strip()
     index   = {c.id: c for c in original_claims}
 
     try:
@@ -192,14 +194,14 @@ class SequentialChain:
 
     def __init__(
         self,
-        chain: Optional[List[str]] = None,
+        chain: list[str] | None = None,
         extractor_model: str = "gpt-4o-mini",
         similarity_threshold: float = 0.92,
-        stream_callback: Optional[Callable[[str, str], None]] = None,
+        stream_callback: Callable[[str, str], None] | None = None,
         timeout: float = 60.0,
-        fallback_chain: Optional[List[str]] = None,
-        penalty_weights: Optional[Dict] = None,
-        budget_usd: Optional[float] = None,
+        fallback_chain: list[str] | None = None,
+        penalty_weights: dict | None = None,
+        budget_usd: float | None = None,
     ):
         self.chain               = chain or self.DEFAULT_CHAIN
         self.extractor_model     = extractor_model
@@ -236,6 +238,7 @@ class SequentialChain:
         report = VerificationReport(
             prompt=prompt,
             chain_models=self.chain,
+            penalty_weights=self.penalty_weights,
         )
         t_start = time.monotonic()
 
@@ -300,16 +303,17 @@ class SequentialChain:
             # ── Step 3: Resolver ─────────────
             log.info("Step 3 — Resolver (%s)", self.chain[2])
 
-            # Budget check before the most expensive step
+            # Budget check before the most expensive step.
+            # Use actual token counts from completed steps — report.total_tokens
+            # is only summed at the end, so we compute it directly here.
             if self.budget_usd is not None:
                 from consensusflow.core.scoring import _estimate_cost_usd
-                current_cost = _estimate_cost_usd(
-                    report.total_tokens
-                    + (proposer_result.total_tokens + auditor_result.total_tokens),
-                    self.chain,
+                from consensusflow.exceptions import BudgetExceededError
+                tokens_so_far = (
+                    proposer_result.total_tokens + auditor_result.total_tokens
                 )
+                current_cost = _estimate_cost_usd(tokens_so_far, self.chain)
                 if current_cost >= self.budget_usd:
-                    from consensusflow.exceptions import BudgetExceededError
                     raise BudgetExceededError(current_cost, self.budget_usd)
 
             resolver_user = self._build_resolver_prompt(
@@ -364,9 +368,13 @@ class SequentialChain:
             {"event": "claims_extracted", "data": [...]}
             {"event": "auditor_chunk",    "data": "..."}
             {"event": "resolver_chunk",   "data": "..."}
-            {"event": "done",             "data": <VerificationReport dict>}
+            {"event": "done",             "data": <VerificationReport>}
         """
-        report = VerificationReport(prompt=prompt, chain_models=self.chain)
+        report = VerificationReport(
+            prompt=prompt,
+            chain_models=self.chain,
+            penalty_weights=self.penalty_weights,
+        )
         t_start = time.monotonic()
 
         # Proposer — streaming
@@ -494,7 +502,7 @@ class SequentialChain:
             for s in [proposer_result, auditor_result, report.resolver_result]
             if s is not None
         )
-        yield {"event": "done", "data": report.to_dict()}
+        yield {"event": "done", "data": report}
 
     # ── Internal helpers ─────────────────────
 
@@ -521,7 +529,7 @@ class SequentialChain:
         self,
         step: str,
         primary_model: str,
-        fallback_model: Optional[str],
+        fallback_model: str | None,
         system: str,
         user: str,
     ) -> StepResult:
@@ -556,16 +564,12 @@ class SequentialChain:
         system: str,
         user: str,
     ) -> AsyncIterator[str]:
-        """Stream with per-chunk timeout enforcement."""
-        async def _inner():
-            async for chunk in self._client.stream(model=model, system=system, user=user):
-                yield chunk
-
-        async for chunk in _inner():
+        """Stream with per-step timeout enforcement via the client's timeout setting."""
+        async for chunk in self._client.stream(model=model, system=system, user=user):
             yield chunk
 
     @staticmethod
-    def _estimate_tokens(text: str) -> Tuple[int, int]:
+    def _estimate_tokens(text: str) -> tuple[int, int]:
         """
         Return (prompt_tokens, completion_tokens) estimates for accounting.
         Uses a rough char-count heuristic (~4 chars per token).
@@ -574,7 +578,7 @@ class SequentialChain:
         approx_completion = max(1, len(text) // 4)
         return (0, approx_completion)
 
-    async def _extract_claims(self, text: str) -> List[AtomicClaim]:
+    async def _extract_claims(self, text: str) -> list[AtomicClaim]:
         user_msg = (
             f"Extract every verifiable factual claim from the text below.\n\n"
             f"TEXT:\n{text}\n\n"
@@ -589,7 +593,7 @@ class SequentialChain:
         return _parse_claims_from_json(response["text"])
 
     def _build_audit_prompt(
-        self, original_answer: str, claims: List[AtomicClaim]
+        self, original_answer: str, claims: list[AtomicClaim]
     ) -> str:
         claims_block = "\n".join(
             f'  [{c.id}] "{c.text}"' for c in claims
@@ -612,7 +616,7 @@ class SequentialChain:
         original_prompt: str,
         proposer_answer: str,
         audit_result: str,
-        claims: List[AtomicClaim],
+        claims: list[AtomicClaim],
     ) -> str:
         corrected = [c for c in claims if c.status != ClaimStatus.VERIFIED]
         corrections_block = ""
@@ -644,12 +648,12 @@ class SequentialChain:
 
 async def verify(
     prompt: str,
-    chain: Optional[List[str]] = None,
+    chain: list[str] | None = None,
     extractor_model: str = "gpt-4o-mini",
     similarity_threshold: float = 0.92,
-    stream_callback: Optional[Callable[[str, str], None]] = None,
-    fallback_chain: Optional[List[str]] = None,
-    budget_usd: Optional[float] = None,
+    stream_callback: Callable[[str, str], None] | None = None,
+    fallback_chain: list[str] | None = None,
+    budget_usd: float | None = None,
 ) -> VerificationReport:
     """
     One-line entry point::

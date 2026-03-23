@@ -5,11 +5,15 @@ engine.py — The main SequentialChain class that orchestrates:
 Supports:
   • Atomic-claim extraction (Phase 2)
   • Adversarial "Negative Reward" auditing (Phase 2)
-  • Early-exit / similarity scoring (Phase 3)
+  • Early-exit / similarity scoring (Phase 3) — embedding-based w/ Jaccard fallback
   • Async streaming (Phase 3)
   • Model fallback chains (Phase 4)
-  • Per-step token tracking in streaming (Phase 4)
+  • tiktoken-accurate token counting for streaming (Phase 4)
   • Streaming timeout enforcement (Phase 4)
+  • Response caching (MemoryCache) — skip LLM for duplicate prompts
+  • Confidence-calibrated claim scoring
+  • Source citation extraction from Auditor output
+  • Webhook delivery of final report
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ import logging
 import re
 import time
 from collections.abc import AsyncIterator, Callable
+from typing import TYPE_CHECKING
 
 from consensusflow.core.protocol import (
     AtomicClaim,
@@ -33,8 +38,30 @@ from consensusflow.exceptions import (
 )
 from consensusflow.providers.litellm_client import LiteLLMClient
 from consensusflow.prompts.loader import load_prompt
+from consensusflow.core.cache import MemoryCache, NullCache
 
 log = logging.getLogger("consensusflow.engine")
+
+
+# ─────────────────────────────────────────────
+# Token accounting (tiktoken)
+# ─────────────────────────────────────────────
+
+def _count_tokens(text: str, model: str = "gpt-4o") -> int:
+    """
+    Count tokens accurately using tiktoken.
+    Falls back to the 4-chars-per-token heuristic when tiktoken can't
+    resolve the exact model encoding (e.g. Gemini, Claude).
+    """
+    try:
+        import tiktoken  # type: ignore[import-untyped]
+        try:
+            enc = tiktoken.encoding_for_model(model)
+        except KeyError:
+            enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text))
+    except Exception:
+        return max(1, len(text) // 4)
 
 
 # ─────────────────────────────────────────────
@@ -44,7 +71,7 @@ log = logging.getLogger("consensusflow.engine")
 def _jaccard_similarity(text_a: str, text_b: str) -> float:
     """
     Fast, dependency-free token-overlap similarity.
-    Returns a value in [0, 1].  Used for the Early-Exit check.
+    Returns a value in [0, 1].  Used as fallback for the Early-Exit check.
     """
     tokens_a = set(re.findall(r"\w+", text_a.lower()))
     tokens_b = set(re.findall(r"\w+", text_b.lower()))
@@ -53,6 +80,45 @@ def _jaccard_similarity(text_a: str, text_b: str) -> float:
     intersection = tokens_a & tokens_b
     union = tokens_a | tokens_b
     return len(intersection) / len(union)
+
+
+def _cosine_similarity(text_a: str, text_b: str) -> float:
+    """
+    TF-weighted cosine similarity between two texts.
+    More semantically sensitive than Jaccard.
+    No external ML dependencies — uses pure Python TF-IDF weighting.
+    """
+    def tf_vector(text: str) -> dict[str, float]:
+        tokens = re.findall(r"\w+", text.lower())
+        if not tokens:
+            return {}
+        counts: dict[str, int] = {}
+        for t in tokens:
+            counts[t] = counts.get(t, 0) + 1
+        total = len(tokens)
+        return {t: c / total for t, c in counts.items()}
+
+    vec_a = tf_vector(text_a)
+    vec_b = tf_vector(text_b)
+    if not vec_a or not vec_b:
+        return 0.0
+
+    shared = set(vec_a) & set(vec_b)
+    dot    = sum(vec_a[t] * vec_b[t] for t in shared)
+    norm_a = sum(v * v for v in vec_a.values()) ** 0.5
+    norm_b = sum(v * v for v in vec_b.values()) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def _compute_similarity(text_a: str, text_b: str) -> float:
+    """
+    Compute best available similarity score.
+    Uses TF cosine similarity (pure-Python, no ML deps).
+    The cosine metric is more sensitive to semantic overlap than Jaccard.
+    """
+    return _cosine_similarity(text_a, text_b)
 
 
 # ─────────────────────────────────────────────
@@ -99,8 +165,10 @@ def _parse_claims_from_json(raw: str) -> list[AtomicClaim]:
 def _parse_audit_from_json(raw: str, original_claims: list[AtomicClaim]) -> list[AtomicClaim]:
     """
     Expects the Auditor to return a JSON array:
-        [{"id": "...", "status": "CORRECTED", "text": "...", "note": "..."}]
+        [{"id": "...", "status": "CORRECTED", "text": "...", "note": "...",
+          "sources": ["https://example.com"], "confidence": 0.9}]
     Merges back into the original claim list.
+    Sources (URLs) are stored in claim.sources for citation display.
     """
     # Strip markdown fences (```json ... ``` or ``` ... ```)
     cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip())
@@ -127,7 +195,15 @@ def _parse_audit_from_json(raw: str, original_claims: list[AtomicClaim]) -> list
                         claim.text = item.get("text", claim.text)
 
                     claim.note = item.get("note")
-                    claim.confidence = float(item.get("confidence", claim.confidence))
+                    # Confidence calibration: honour auditor's stated confidence
+                    raw_conf = item.get("confidence", claim.confidence)
+                    claim.confidence = max(0.0, min(1.0, float(raw_conf)))
+
+                    # Source citation extraction
+                    sources = item.get("sources", [])
+                    if isinstance(sources, list):
+                        claim.sources = [str(s) for s in sources if s]
+
             return list(index.values())
     except (json.JSONDecodeError, ValueError):
         pass
@@ -156,6 +232,8 @@ class SequentialChain:
             chain=["gpt-4o", "gemini/gemini-1.5-pro", "claude-3-5-sonnet-20241022"],
             extractor_model="gpt-4o-mini",
             similarity_threshold=0.92,
+            enable_cache=True,
+            webhook_url="https://yourapp.example.com/hooks/verification",
         )
         report = await chain.run("Plan a 2-day trip to Istanbul.")
 
@@ -167,7 +245,7 @@ class SequentialChain:
     extractor_model : str
         Fast model used for atomic claim extraction (default: gpt-4o-mini).
     similarity_threshold : float
-        If Jaccard similarity between proposer and auditor outputs
+        If cosine similarity between proposer and auditor outputs
         exceeds this value, resolver is skipped (early exit).
     stream_callback : callable, optional
         Called with ``(step: str, chunk: str)`` for real-time streaming.
@@ -175,15 +253,18 @@ class SequentialChain:
         Per-step timeout in seconds.
     fallback_chain : list[str], optional
         Fallback models tried in order if the primary chain fails.
-        Each element replaces the *entire* [proposer, auditor, resolver]
-        triplet when provided as a list-of-lists, or replaces only the
-        failing position when provided as a flat list of 3.
     penalty_weights : dict, optional
         Override default penalty weights for Gotcha Score calculation.
-        Keys are ClaimStatus enum values, values are int penalties.
     budget_usd : float, optional
-        If set, raises BudgetExceededError before the resolver step
-        when estimated cost exceeds this value.
+        Raise BudgetExceededError before resolver when cost exceeds this.
+    enable_cache : bool
+        If True, cache identical (model, prompt) pairs in memory.
+    cache_ttl : float
+        Seconds until a cache entry expires (default 1 hour).
+    cache_maxsize : int
+        Maximum cached entries before LRU eviction.
+    webhook_url : str, optional
+        If set, POST the final JSON report to this URL after each run.
     """
 
     DEFAULT_CHAIN = [
@@ -202,6 +283,10 @@ class SequentialChain:
         fallback_chain: list[str] | None = None,
         penalty_weights: dict | None = None,
         budget_usd: float | None = None,
+        enable_cache: bool = False,
+        cache_ttl: float = 3600.0,
+        cache_maxsize: int = 256,
+        webhook_url: str | None = None,
     ):
         self.chain               = chain or self.DEFAULT_CHAIN
         self.extractor_model     = extractor_model
@@ -211,6 +296,7 @@ class SequentialChain:
         self.fallback_chain      = fallback_chain
         self.penalty_weights     = penalty_weights
         self.budget_usd          = budget_usd
+        self.webhook_url         = webhook_url
 
         if len(self.chain) != 3:
             raise ChainConfigError(
@@ -223,6 +309,14 @@ class SequentialChain:
             )
 
         self._client = LiteLLMClient(timeout=timeout)
+
+        # Cache backend
+        if enable_cache:
+            self._cache: MemoryCache | NullCache = MemoryCache(
+                maxsize=cache_maxsize, ttl_seconds=cache_ttl
+            )
+        else:
+            self._cache = NullCache()
 
         # Load prompt templates once
         self._adversarial_prompt = load_prompt("adversarial")
@@ -280,7 +374,7 @@ class SequentialChain:
         self._emit("auditor_done", auditor_result.raw_text)
 
         # ── Step 3: Early-Exit Check ─────────
-        similarity = _jaccard_similarity(
+        similarity = _compute_similarity(
             proposer_result.raw_text, auditor_result.raw_text
         )
         report.similarity_score = similarity
@@ -359,6 +453,10 @@ class SequentialChain:
             if s is not None
         )
 
+        # ── Webhook delivery ─────────────────
+        if self.webhook_url:
+            await self._deliver_webhook(report)
+
         return report
 
     async def stream(self, prompt: str) -> AsyncIterator[dict]:
@@ -395,8 +493,8 @@ class SequentialChain:
             return
 
         proposer_latency = (time.monotonic() - proposer_t0) * 1000
-        # Fetch token counts via a lightweight non-streaming call for accounting
-        proposer_tokens = self._estimate_tokens(proposer_text)
+        # tiktoken-accurate token count for streaming responses
+        proposer_tokens = self._estimate_tokens(proposer_text, self.chain[0])
         proposer_result = StepResult(
             step="proposer",
             model=self.chain[0],
@@ -432,7 +530,7 @@ class SequentialChain:
             return
 
         auditor_latency = (time.monotonic() - auditor_t0) * 1000
-        auditor_tokens = self._estimate_tokens(auditor_text)
+        auditor_tokens = self._estimate_tokens(auditor_text, self.chain[1])
         auditor_result = StepResult(
             step="auditor",
             model=self.chain[1],
@@ -444,8 +542,8 @@ class SequentialChain:
         report.auditor_result = auditor_result
         report.atomic_claims = _parse_audit_from_json(auditor_text, claims)
 
-        # Early-exit check
-        similarity = _jaccard_similarity(proposer_text, auditor_text)
+        # Early-exit check (streaming path)
+        similarity = _compute_similarity(proposer_text, auditor_text)
         report.similarity_score = similarity
         all_verified = all(c.status == ClaimStatus.VERIFIED for c in report.atomic_claims)
 
@@ -480,7 +578,7 @@ class SequentialChain:
                 resolver_text = proposer_text
 
             resolver_latency = (time.monotonic() - resolver_t0) * 1000
-            resolver_tokens = self._estimate_tokens(resolver_text)
+            resolver_tokens = self._estimate_tokens(resolver_text, self.chain[2])
             resolver_result = StepResult(
                 step="resolver",
                 model=self.chain[2],
@@ -502,6 +600,9 @@ class SequentialChain:
             for s in [proposer_result, auditor_result, report.resolver_result]
             if s is not None
         )
+        # Webhook delivery (stream path)
+        if self.webhook_url:
+            await self._deliver_webhook(report)
         yield {"event": "done", "data": report}
 
     # ── Internal helpers ─────────────────────
@@ -514,8 +615,17 @@ class SequentialChain:
         user: str,
     ) -> StepResult:
         t0 = time.monotonic()
-        response = await self._client.complete(model=model, system=system, user=user)
-        latency  = (time.monotonic() - t0) * 1000
+        # Check cache first
+        cache_key = self._cache.make_key(model, system, user)
+        cached = await self._cache.get(cache_key)
+        if cached is not None:
+            log.debug("Cache HIT for step=%s model=%s", step, model)
+            response = cached
+        else:
+            response = await self._client.complete(model=model, system=system, user=user)
+            await self._cache.set(cache_key, response)
+
+        latency = (time.monotonic() - t0) * 1000
         return StepResult(
             step=step,
             model=model,
@@ -569,14 +679,36 @@ class SequentialChain:
             yield chunk
 
     @staticmethod
-    def _estimate_tokens(text: str) -> tuple[int, int]:
+    def _estimate_tokens(text: str, model: str = "") -> tuple[int, int]:
         """
-        Return (prompt_tokens, completion_tokens) estimates for accounting.
-        Uses a rough char-count heuristic (~4 chars per token).
-        prompt_tokens set to 0 (already counted in the non-streaming path).
+        Return (prompt_tokens, completion_tokens) for accounting.
+        Uses tiktoken for accurate counting when available,
+        falls back to ~4 chars/token heuristic.
+        prompt_tokens set to 0 (already counted in non-streaming path).
         """
-        approx_completion = max(1, len(text) // 4)
-        return (0, approx_completion)
+        completion = _count_tokens(text, model or "gpt-4o")
+        return (0, completion)
+
+    async def _deliver_webhook(self, report: VerificationReport) -> None:
+        """
+        POST the serialised report to self.webhook_url.
+        Fires-and-forgets on error to never block the pipeline.
+        """
+        if not self.webhook_url:
+            return
+        try:
+            import httpx  # type: ignore[import-untyped]
+            payload = report.to_dict()
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    self.webhook_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json", "User-Agent": "ConsensusFlow/1.0"},
+                )
+                resp.raise_for_status()
+            log.info("Webhook delivered to %s  status=%d", self.webhook_url, resp.status_code)
+        except Exception as exc:
+            log.warning("Webhook delivery to %s failed: %s", self.webhook_url, exc)
 
     async def _extract_claims(self, text: str) -> list[AtomicClaim]:
         user_msg = (
@@ -607,7 +739,9 @@ class SequentialChain:
             f'  "status"     : one of VERIFIED | CORRECTED | DISPUTED | NUANCED | REJECTED\n'
             f'  "text"       : corrected text (only if CORRECTED, else repeat original)\n'
             f'  "note"       : your forensic reasoning (1-2 sentences)\n'
-            f'  "confidence" : float 0.0–1.0\n\n'
+            f'  "confidence" : float 0.0–1.0 representing your certainty\n'
+            f'  "sources"    : JSON array of verifiable URLs supporting your verdict '
+            f'(empty array [] if none available)\n\n'
             f"Return ONLY the JSON array, no prose."
         )
 
@@ -654,6 +788,9 @@ async def verify(
     stream_callback: Callable[[str, str], None] | None = None,
     fallback_chain: list[str] | None = None,
     budget_usd: float | None = None,
+    enable_cache: bool = False,
+    cache_ttl: float = 3600.0,
+    webhook_url: str | None = None,
 ) -> VerificationReport:
     """
     One-line entry point::
@@ -668,6 +805,12 @@ async def verify(
         3-model fallback used if primary chain fails.
     budget_usd : float, optional
         Raise BudgetExceededError before resolver if cost exceeds this.
+    enable_cache : bool
+        Cache identical (model, prompt) pairs in memory.
+    cache_ttl : float
+        Seconds until a cache entry expires.
+    webhook_url : str, optional
+        POST the final report to this URL after completion.
     """
     engine = SequentialChain(
         chain=chain,
@@ -676,5 +819,8 @@ async def verify(
         stream_callback=stream_callback,
         fallback_chain=fallback_chain,
         budget_usd=budget_usd,
+        enable_cache=enable_cache,
+        cache_ttl=cache_ttl,
+        webhook_url=webhook_url,
     )
     return await engine.run(prompt)

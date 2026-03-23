@@ -255,6 +255,7 @@ def _letter_grade(score: int) -> tuple[str, str, str]:
 def compute_gotcha_score(
     report: VerificationReport,
     penalty_weights: dict[ClaimStatus, int] | None = None,
+    calibrate_confidence: bool = True,
 ) -> GotchaScore:
     """
     Compute the Gotcha Score for a completed VerificationReport.
@@ -263,8 +264,11 @@ def compute_gotcha_score(
     ----------
     report : VerificationReport
     penalty_weights : dict, optional
-        Override default penalties per ClaimStatus. Useful for domain-specific
-        tuning (e.g. medical use-cases may want higher REJECTED penalty).
+        Override default penalties per ClaimStatus.
+    calibrate_confidence : bool
+        If True (default), scale each claim's penalty by the auditor's
+        stated confidence (0.0–1.0) so high-certainty errors penalise
+        more than uncertain/tentative ones.
 
     Returns a GotchaScore with score, grade, taxonomy, and share text.
     """
@@ -281,24 +285,32 @@ def compute_gotcha_score(
         gs.share_text = _build_share_text(gs, report.prompt)
         return gs
 
-    # ── Compute penalty ──────────────────────
-    raw_penalty   = 0
+    # ── Compute penalty (confidence-calibrated) ──────────────────────
+    raw_penalty   = 0.0
     penalty_by_status: dict[str, int] = {}
     taxonomy_counts: dict[str, int]   = {}
     catches = 0
 
     for claim in claims:
-        p = penalties.get(claim.status, 0)
+        base_p = penalties.get(claim.status, 0)
+        # Confidence calibration: scale penalty by auditor confidence.
+        # A confidence of 0.5 on a REJECTED claim halves the penalty.
+        # VERIFIED claims always contribute 0, regardless.
+        if calibrate_confidence and claim.status != ClaimStatus.VERIFIED:
+            conf = max(0.0, min(1.0, claim.confidence))
+            p = base_p * conf
+        else:
+            p = float(base_p)
         raw_penalty += p
         key = claim.status.value
-        penalty_by_status[key] = penalty_by_status.get(key, 0) + p
+        penalty_by_status[key] = penalty_by_status.get(key, 0) + base_p
 
         if claim.status != ClaimStatus.VERIFIED:
             catches += 1
             cat = classify_failure(claim).value
             taxonomy_counts[cat] = taxonomy_counts.get(cat, 0) + 1
 
-    # Normalise: worst case = every claim at max penalty
+    # Normalise: worst case = every claim at max penalty (unscaled)
     worst_case = total * max_penalty
     raw_score = max(0, round(100 * (1 - raw_penalty / worst_case)))
 

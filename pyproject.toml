@@ -40,6 +40,9 @@ dev = [
 server = [
     "fastapi>=0.104",
     "uvicorn[standard]>=0.24",
+    "aiosqlite>=0.19",
+    "tiktoken>=0.5",
+    "httpx>=0.25",
 ]
 
 [project.scripts]

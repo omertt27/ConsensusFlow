@@ -1517,3 +1517,270 @@
   border-left: 2px solid rgba(255, 255, 255, .12);
   line-height: 1.5;
 }
+
+/* ── Source Citations ──────────────────────────────────────────────────── */
+.claim-sources {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .7rem;
+  color: var(--blue);
+  text-decoration: none;
+  padding: 2px 8px;
+  border: 1px solid rgba(96, 165, 250, .25);
+  border-radius: 20px;
+  background: rgba(96, 165, 250, .07);
+  transition: background .15s, border-color .15s;
+  word-break: break-all;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-link:hover {
+  background: rgba(96, 165, 250, .15);
+  border-color: rgba(96, 165, 250, .5);
+}
+
+/* ── History Panel ──────────────────────────────────────────────────────── */
+.history-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  animation: fade-up .35s ease both;
+}
+
+.history-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.history-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.history-count {
+  font-size: .72rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
+.history-clear-btn {
+  font-size: .72rem;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+
+.history-clear-btn:hover {
+  color: var(--red);
+  border-color: var(--red);
+  background: rgba(248, 113, 113, .08);
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.history-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.history-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .08);
+  border-radius: 2px;
+}
+
+.history-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, .025);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+.history-item:hover {
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .15);
+}
+
+.history-item-score {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .85rem;
+  font-weight: 800;
+  border: 2px solid;
+}
+
+.history-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item-prompt {
+  font-size: .82rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.history-item-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.history-meta-pill {
+  font-size: .68rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.history-item-status {
+  flex-shrink: 0;
+  font-size: .68rem;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+.history-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: .8rem;
+  padding: 20px 0;
+}
+
+/* ── Cache Stats Banner ─────────────────────────────────────────────────── */
+.cache-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: rgba(96, 165, 250, .06);
+  border: 1px solid rgba(96, 165, 250, .18);
+  border-radius: 10px;
+  margin-bottom: 14px;
+  font-size: .73rem;
+  color: var(--muted2);
+  flex-wrap: wrap;
+}
+
+.cache-stats-label {
+  color: var(--blue);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cache-hit-rate {
+  color: var(--green);
+  font-weight: 700;
+}
+
+/* ── Batch Mode Panel ──────────────────────────────────────────────────── */
+.batch-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .78rem;
+  color: var(--muted2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.batch-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.batch-result-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  animation: fade-up .3s ease both;
+}
+
+.batch-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.batch-result-idx {
+  font-size: .72rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.batch-result-prompt {
+  font-size: .8rem;
+  color: var(--text2);
+  margin-bottom: 8px;
+  line-height: 1.45;
+}
+
+.batch-result-error {
+  font-size: .78rem;
+  color: var(--red);
+  background: rgba(248, 113, 113, .07);
+  border-radius: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(248, 113, 113, .18);
+}

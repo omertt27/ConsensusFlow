@@ -54,6 +54,7 @@ class AtomicClaim:
     original_text: Optional[str] = None   # set when CORRECTED
     note: Optional[str] = None            # Auditor's free-text remark
     confidence: float = 1.0               # 0.0 – 1.0
+    sources: List[str] = field(default_factory=list)  # verifiable URLs cited
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -63,6 +64,7 @@ class AtomicClaim:
             "original_text": self.original_text,
             "note": self.note,
             "confidence": self.confidence,
+            "sources": self.sources,
         }
 
 

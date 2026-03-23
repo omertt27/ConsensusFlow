@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ConsensusFlow — The Trust Protocol for AI Outputs</title>
+  <meta name="description" content="ConsensusFlow is a multi-model verification pipeline that chains LLMs sequentially — Proposer → Auditor → Resolver — to catch hallucinations before they reach your users." />
+  <meta name="keywords" content="LLM verification, hallucination detection, multi-model AI, consensus, fact-checking, litellm, python" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="ConsensusFlow — Verified Answers in One Line of Code" />
+  <meta property="og:description" content="Chain GPT, Gemini & Claude to verify every atomic claim. Never ship a hallucination again." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://omer.github.io/consensusflow" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ConsensusFlow — The Trust Protocol for AI" />
+  <meta name="twitter:description" content="Multi-model verification pipeline. pip install consensusflow" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <link rel="stylesheet" href="assets/css/animation.css" />
+
+  <!-- Favicon (inline SVG data URI) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%233b82f6'/><text y='23' x='4' font-size='20'>🔍</text></svg>" />
+</head>
+<body>
+
+<!-- ════════════════════════════════════════
+     ANNOUNCEMENT BAR
+════════════════════════════════════════ -->
+<div class="announcement" style="position:relative;">
+  🚀 &nbsp;<strong>ConsensusFlow v0.1.0</strong> is live —
+  <a href="https://github.com/omer/consensusflow" target="_blank" rel="noopener">Star us on GitHub</a>
+  &nbsp;and help us reach 1,000 stars.
+  <button class="announcement__close" aria-label="Close announcement">✕</button>
+</div>
+
+<!-- ════════════════════════════════════════
+     NAVIGATION
+════════════════════════════════════════ -->
+<nav class="nav" role="navigation" aria-label="Main navigation">
+  <div class="container">
+    <div class="nav__inner">
+      <a href="#" class="nav__logo">
+        <div class="nav__logo-icon">🔍</div>
+        ConsensusFlow
+      </a>
+
+      <ul class="nav__links">
+        <li><a href="#problem">The Problem</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#demo">Demo</a></li>
+        <li><a href="#quickstart">Quickstart</a></li>
+        <li><a href="#benchmarks">Benchmarks</a></li>
+      </ul>
+
+      <div class="nav__cta">
+        <a href="#quickstart" class="btn btn--ghost" style="font-size:.875rem;padding:8px 16px;">Docs</a>
+        <a href="https://github.com/omer/consensusflow" target="_blank" rel="noopener" class="btn btn--primary" style="font-size:.875rem;padding:8px 16px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          GitHub
+        </a>
+      </div>
+
+      <button class="nav__hamburger" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile menu -->
+  <div class="nav__mobile-menu" role="menu">
+    <a href="#problem">The Problem</a>
+    <a href="#features">Features</a>
+    <a href="#demo">Demo</a>
+    <a href="#quickstart">Quickstart</a>
+    <a href="#benchmarks">Benchmarks</a>
+    <a href="https://github.com/omer/consensusflow" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</nav>
+
+<!-- ════════════════════════════════════════
+     HERO
+════════════════════════════════════════ -->
+<section class="hero" id="hero">
+  <div class="hero__grid-bg" aria-hidden="true"></div>
+  <div class="hero__glow" aria-hidden="true"></div>
+  <div class="container">
+    <div class="hero__content">
+      <div class="hero__eyebrow">
+        <span class="dot"></span>
+        Open Source · MIT License · pip installable
+      </div>
+
+      <h1 class="hero__title">
+        Verified Answers<br/>
+        <span class="gradient">in One Line of Code</span>
+      </h1>
+
+      <p class="hero__subtitle">
+        ConsensusFlow chains multiple LLMs sequentially to verify every
+        atomic claim — catching hallucinations before they reach your users.
+      </p>
+
+      <div class="hero__cta">
+        <a href="https://github.com/omer/consensusflow" target="_blank" rel="noopener" class="btn btn--primary btn--large">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          Get Started on GitHub
+        </a>
+        <a href="#demo" class="btn btn--ghost btn--large">
+          Watch Demo
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+        </a>
+      </div>
+
+      <div class="hero__stats">
+        <div class="hero__stat">
+          <span class="hero__stat-value"><span data-target="95" data-suffix="%" class="accent">95%</span></span>
+          <span class="hero__stat-label">Hallucination catch rate</span>
+        </div>
+        <div class="hero__stat">
+          <span class="hero__stat-value"><span data-target="33" data-suffix="%">33%</span></span>
+          <span class="hero__stat-label">Token savings via early exit</span>
+        </div>
+        <div class="hero__stat">
+          <span class="hero__stat-value"><span data-target="100" data-suffix="+">100+</span></span>
+          <span class="hero__stat-label">LLM providers supported</span>
+        </div>
+        <div class="hero__stat">
+          <span class="hero__stat-value"><span data-target="1" data-suffix=" line">1 line</span></span>
+          <span class="hero__stat-label">to verify any prompt</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     PIPELINE DIAGRAM
+════════════════════════════════════════ -->
+<div class="pipeline" aria-label="ConsensusFlow pipeline diagram">
+  <div class="container">
+    <p class="pipeline__title">How it works</p>
+    <div class="pipeline__flow">
+
+      <!-- Input -->
+      <div class="pipeline__step reveal">
+        <div class="pipeline__bubble pipeline__bubble--proposer">📝</div>
+        <div class="pipeline__step-label">User Prompt</div>
+        <div class="pipeline__step-model">Input</div>
+      </div>
+
+      <div class="pipeline__arrow reveal reveal-delay-1">
+        <svg width="32" height="16" viewBox="0 0 32 16" fill="none">
+          <path d="M0 8h28M22 2l8 6-8 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="pipeline__arrow-label">prompt</span>
+      </div>
+
+      <!-- Proposer -->
+      <div class="pipeline__step reveal reveal-delay-1">
+        <div class="pipeline__bubble pipeline__bubble--proposer">🧠</div>
+        <div class="pipeline__step-label">Proposer</div>
+        <div class="pipeline__step-model">gpt-4o</div>
+      </div>
+
+      <div class="pipeline__arrow reveal reveal-delay-2">
+        <svg width="32" height="16" viewBox="0 0 32 16" fill="none">
+          <path d="M0 8h28M22 2l8 6-8 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="pipeline__arrow-label">draft answer</span>
+      </div>
+
+      <!-- Extractor -->
+      <div class="pipeline__step reveal reveal-delay-2">
+        <div class="pipeline__bubble pipeline__bubble--extractor">🔬</div>
+        <div class="pipeline__step-label">Claim Extractor</div>
+        <div class="pipeline__step-model">gpt-4o-mini</div>
+      </div>
+
+      <div class="pipeline__arrow reveal reveal-delay-3">
+        <svg width="32" height="16" viewBox="0 0 32 16" fill="none">
+          <path d="M0 8h28M22 2l8 6-8 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="pipeline__arrow-label">atomic claims</span>
+      </div>
+
+      <!-- Auditor -->
+      <div class="pipeline__step reveal reveal-delay-3">
+        <div class="pipeline__bubble pipeline__bubble--auditor">⚖️</div>
+        <div class="pipeline__step-label">Adversarial Auditor</div>
+        <div class="pipeline__step-model">gemini-2.0-flash</div>
+      </div>
+
+      <div class="pipeline__arrow reveal reveal-delay-4">
+        <svg width="32" height="16" viewBox="0 0 32 16" fill="none">
+          <path d="M0 8h28M22 2l8 6-8 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="pipeline__arrow-label">verdict + corrections</span>
+      </div>
+
+      <!-- Resolver -->
+      <div class="pipeline__step reveal reveal-delay-4">
+        <div class="pipeline__bubble pipeline__bubble--resolver">✍️</div>
+        <div class="pipeline__step-label">Resolver</div>
+        <div class="pipeline__step-model">claude-3-7-sonnet</div>
+      </div>
+
+      <div class="pipeline__arrow reveal reveal-delay-4">
+        <svg width="32" height="16" viewBox="0 0 32 16" fill="none">
+          <path d="M0 8h28M22 2l8 6-8 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- Output -->
+      <div class="pipeline__output reveal reveal-delay-4">
+        <div class="pipeline__output-icon">✅</div>
+        <div class="pipeline__output-text">
+          <strong>Verified Answer</strong>
+          <span>+ Full Audit Trail</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     PROBLEM / PAIN POINT
+════════════════════════════════════════ -->
+<section class="problem section" id="problem">
+  <div class="container">
+    <div class="problem__grid">
+      <div class="reveal">
+        <div class="problem__label">The Problem</div>
+        <h2 class="problem__heading">The Trust Wall</h2>
+        <p class="problem__body">
+          Generative AI models produce confident, fluent, and <em>wrong</em> answers.
+          Developers shipping AI products face a fundamental problem: they cannot
+          verify the output of a single model without manually checking every fact.
+        </p>
+        <p class="problem__body">
+          This "Trust Wall" costs engineering time, creates liability risk, and
+          destroys user confidence the moment one hallucination slips through.
+        </p>
+        <div class="trust-wall">
+          <div class="trust-wall__item">
+            <div class="trust-wall__icon">❌</div>
+            <div class="trust-wall__text">
+              <strong>Single-model hallucinations</strong>
+              <span>GPT-4o alone hallucinates on ~30% of factual queries in production.</span>
+            </div>
+          </div>
+          <div class="trust-wall__item">
+            <div class="trust-wall__icon">🚨</div>
+            <div class="trust-wall__text">
+              <strong>No audit trail</strong>
+              <span>Users get a final answer with no visibility into how it was derived.</span>
+            </div>
+          </div>
+          <div class="trust-wall__item">
+            <div class="trust-wall__icon">💸</div>
+            <div class="trust-wall__text">
+              <strong>"Multi-model is 3× the cost"</strong>
+              <span>Running 3 models naively tripled token spend — until now.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="reveal reveal-delay-2">
+        <div class="problem__label problem__label--solution">The Solution</div>
+        <h2 class="problem__heading">Sequential Verification</h2>
+        <p class="problem__body">
+          ConsensusFlow introduces a three-stage pipeline with an adversarial
+          middle layer. Instead of asking models to agree, it forces them to
+          disagree — finding friction before it reaches your users.
+        </p>
+        <p class="problem__body">
+          The <strong>Early Exit</strong> mechanism means you only pay the full
+          chain cost when disagreement is detected. When all claims pass,
+          the resolver is skipped entirely — saving up to 33% on tokens.
+        </p>
+        <div class="trust-wall" style="border-top: 2px solid var(--green-400);">
+          <div class="trust-wall__item">
+            <div class="trust-wall__icon">🔬</div>
+            <div class="trust-wall__text">
+              <strong>Atomic claim extraction</strong>
+              <span>Every fact is isolated and checked individually, not as a whole.</span>
+            </div>
+          </div>
+          <div class="trust-wall__item">
+            <div class="trust-wall__icon">⚖️</div>
+            <div class="trust-wall__text">
+              <strong>Adversarial "Negative Reward" audit</strong>
+              <span>Auditors are penalised for agreeing too easily — they must find the flaw.</span>
+            </div>
+          </div>
+          <div class="trust-wall__item">
+            <div class="trust-wall__icon">📄</div>
+            <div class="trust-wall__text">
+              <strong>Full Markdown audit trail</strong>
+              <span>Every correction, nuance, and verification is logged and exportable.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     FEATURES
+════════════════════════════════════════ -->
+<section class="features section" id="features">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="tag">✨ Features</div>
+      <h2>Everything you need.<br/>Nothing you don't.</h2>
+      <p>Built by a developer who ran into the Trust Wall, for developers who are running into it now.</p>
+    </div>
+
+    <div class="features__grid">
+
+      <div class="feature-card reveal">
+        <div class="feature-card__icon" style="background:linear-gradient(135deg,#1e3a5f,#0d1b2a);">🔗</div>
+        <h3>Sequential Multi-Model Chain</h3>
+        <p>Run any 3 LiteLLM-compatible models in a Proposer → Auditor → Resolver pipeline. Swap GPT, Gemini, or Claude in one line.</p>
+        <span class="feature-card__badge" style="background:var(--blue-500)22;color:var(--blue-400);border:1px solid var(--blue-500)44;">100+ providers</span>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="feature-card__icon" style="background:linear-gradient(135deg,#1a1a2e,#16213e);">🔬</div>
+        <h3>Atomic Claim Extraction</h3>
+        <p>Uses a fast model (gpt-4o-mini) to decompose any answer into independently verifiable facts before auditing — no "generalized agreement."</p>
+        <span class="feature-card__badge" style="background:var(--purple-400)22;color:var(--purple-400);border:1px solid var(--purple-400)44;">Phase 2</span>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="feature-card__icon" style="background:linear-gradient(135deg,#1c1107,#2d1a00);">⚖️</div>
+        <h3>Adversarial "Negative Reward" Audit</h3>
+        <p>The Auditor is hardcoded to find flaws. If it agrees with everything, its evaluation is rejected as "Low Effort." Friction is enforced.</p>
+        <span class="feature-card__badge" style="background:var(--yellow-400)22;color:var(--yellow-400);border:1px solid var(--yellow-400)44;">Your moat</span>
+      </div>
+
+      <div class="feature-card reveal">
+        <div class="feature-card__icon" style="background:linear-gradient(135deg,#0d2b0d,#071a07);">⚡</div>
+        <h3>Early Exit Cost Savings</h3>
+        <p>A Jaccard similarity scorer detects when the Auditor finds zero issues. The Resolver is skipped — saving ~33% on tokens automatically.</p>
+        <span class="feature-card__badge" style="background:var(--green-500)22;color:var(--green-400);border:1px solid var(--green-500)44;">Save 33% tokens</span>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="feature-card__icon" style="background:linear-gradient(135deg,#1c1107,#0d0d0d);">📄</div>
+        <h3>Markdown Audit Trail</h3>
+        <p>Every run produces a structured report: ✅ Verified, 🔧 Corrected, 🔍 Nuanced, ⚠️ Disputed — with claim-level diffs and model attribution.</p>
+        <span class="feature-card__badge" style="background:var(--yellow-400)22;color:var(--yellow-400);border:1px solid var(--yellow-400)44;">Phase 4</span>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="feature-card__icon" style="background:linear-gradient(135deg,#1e2a1e,#0a1a0a);">🌊</div>
+        <h3>Async Streaming</h3>
+        <p>Stream the Proposer's answer to your UI immediately with a "Verifying…" status. Updates appear in real-time as each model finishes.</p>
+        <span class="feature-card__badge" style="background:var(--blue-500)22;color:var(--blue-400);border:1px solid var(--blue-500)44;">Phase 3</span>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     DEMO SECTION
+════════════════════════════════════════ -->
+<section class="demo section" id="demo">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="tag">🎬 Live Demo</div>
+      <h2>Watch it catch a real error</h2>
+      <p>An actual Istanbul itinerary — and the hallucination ConsensusFlow corrected in real time.</p>
+    </div>
+
+    <div class="demo__grid">
+      <!-- Terminal animation -->
+      <div class="reveal" id="demo-terminal">
+        <div class="terminal demo-terminal">
+          <div class="terminal__header">
+            <div class="terminal__dot terminal__dot--red"></div>
+            <div class="terminal__dot terminal__dot--yellow"></div>
+            <div class="terminal__dot terminal__dot--green"></div>
+            <span class="terminal__title">consensusflow — zsh</span>
+          </div>
+          <div class="terminal__body" style="height:420px;overflow-y:auto;">
+            <!-- Populated by demo.js -->
+          </div>
+        </div>
+        <button class="demo__replay" id="demo-replay" aria-label="Replay demo">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.66"/></svg>
+          Replay
+        </button>
+      </div>
+
+      <!-- Audit report card -->
+      <div class="reveal reveal-delay-2">
+        <p style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-400);font-weight:600;margin-bottom:16px;">
+          📄 Generated Report — report.md
+        </p>
+        <div class="audit-report">
+          <div class="audit-report__header">
+            <span class="audit-report__title">✅ ConsensusFlow Verification Report</span>
+            <span class="audit-report__badge badge--success">SUCCESS</span>
+          </div>
+          <div class="audit-report__body">
+
+            <div class="claim-row">
+              <div class="claim-row__status">✅</div>
+              <div class="claim-row__content">
+                <div class="claim-row__text">Hagia Sophia is open to visitors daily from 9 AM to 5 PM.</div>
+                <div class="claim-row__note">Confirmed current 2026 hours.</div>
+              </div>
+              <span class="claim-row__badge claim-badge--verified">Verified</span>
+            </div>
+
+            <div class="claim-row">
+              <div class="claim-row__status">✅</div>
+              <div class="claim-row__content">
+                <div class="claim-row__text">The Grand Bazaar has over 4,000 shops.</div>
+                <div class="claim-row__note">Well-documented figure, consistent across sources.</div>
+              </div>
+              <span class="claim-row__badge claim-badge--verified">Verified</span>
+            </div>
+
+            <div class="claim-row">
+              <div class="claim-row__status">🔧</div>
+              <div class="claim-row__content">
+                <div class="claim-row__text">
+                  <span class="claim-row__text--strike">The Blue Mosque charges €10 admission.</span>
+                  <span class="claim-row__text--corrected">The Blue Mosque is free to enter.</span>
+                </div>
+                <div class="claim-row__note">Gemini: Entry has always been free. The €10 figure is a hallucination.</div>
+              </div>
+              <span class="claim-row__badge claim-badge--corrected">Corrected</span>
+            </div>
+
+            <div class="claim-row">
+              <div class="claim-row__status">✅</div>
+              <div class="claim-row__content">
+                <div class="claim-row__text">Istiklal Street is a pedestrian shopping avenue in Beyoğlu.</div>
+              </div>
+              <span class="claim-row__badge claim-badge--verified">Verified</span>
+            </div>
+
+            <div class="claim-row">
+              <div class="claim-row__status">🔍</div>
+              <div class="claim-row__content">
+                <div class="claim-row__text">Topkapi Palace is open Tuesday through Sunday.</div>
+                <div class="claim-row__note">Correct, but hours changed in Jan 2026: now 9 AM–6 PM (was 5 PM).</div>
+              </div>
+              <span class="claim-row__badge claim-badge--nuanced">Nuanced</span>
+            </div>
+
+          </div>
+          <div class="audit-report__footer">
+            <div class="audit-report__footer-stats">
+              <span>✅ 4 verified</span>
+              <span>🔧 1 corrected</span>
+              <span>🔍 1 nuanced</span>
+            </div>
+            <span>🎯 83% consensus · 4,156 tokens</span>
+          </div>
+        </div>
+
+        <!-- Gotcha Score Card -->
+        <div class="gotcha-card reveal reveal-delay-3">
+          <div class="gotcha-card__header">
+            <span class="gotcha-card__label">🎯 Gotcha Score</span>
+            <span class="gotcha-card__badge">Shareable Metric</span>
+          </div>
+          <div class="gotcha-card__score-row">
+            <div class="gotcha-card__score-circle" id="gotcha-score-circle">
+              <svg viewBox="0 0 120 120" class="gotcha-ring">
+                <circle class="gotcha-ring__bg" cx="60" cy="60" r="52"/>
+                <circle class="gotcha-ring__fill" cx="60" cy="60" r="52"
+                        stroke-dasharray="326.7" stroke-dashoffset="326.7"
+                        id="gotcha-ring-fill"/>
+              </svg>
+              <div class="gotcha-card__score-inner">
+                <span class="gotcha-card__score-num" id="gotcha-score-num">0</span>
+                <span class="gotcha-card__score-denom">/100</span>
+              </div>
+            </div>
+            <div class="gotcha-card__grade-block">
+              <div class="gotcha-card__grade" id="gotcha-grade">B</div>
+              <div class="gotcha-card__label-text" id="gotcha-label">Mostly Reliable</div>
+              <div class="gotcha-card__catches">
+                <span class="gotcha-card__catches-num" id="gotcha-catches">2</span>
+                <span class="gotcha-card__catches-label">gotchas caught</span>
+              </div>
+            </div>
+          </div>
+          <div class="gotcha-card__taxonomy">
+            <div class="taxonomy-row">
+              <span class="taxonomy-dot taxonomy-dot--fabrication"></span>
+              <span class="taxonomy-label">Fabrication</span>
+              <span class="taxonomy-bar-wrap"><span class="taxonomy-bar" style="width:60%"></span></span>
+              <span class="taxonomy-count">1</span>
+            </div>
+            <div class="taxonomy-row">
+              <span class="taxonomy-dot taxonomy-dot--outdated"></span>
+              <span class="taxonomy-label">Outdated Info</span>
+              <span class="taxonomy-bar-wrap"><span class="taxonomy-bar taxonomy-bar--outdated" style="width:60%"></span></span>
+              <span class="taxonomy-count">1</span>
+            </div>
+          </div>
+          <div class="gotcha-card__share">
+            <button class="gotcha-share-btn" id="gotcha-share-btn" onclick="copyGotchaShare()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              Share Score
+            </button>
+            <span class="gotcha-share-text" id="gotcha-share-text">ConsensusFlow caught 2 hallucinations! Score: 72/100 🟡 | Grade: B #ConsensusFlow #AIHallucination</span>
+          </div>
+          <div class="gotcha-card__savings">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Est. cost <strong>$0.0416</strong> · 4,156 tokens used
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     QUICKSTART
+════════════════════════════════════════ -->
+<section class="quickstart section" id="quickstart">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="tag">🚀 Quickstart</div>
+      <h2>Up and running in 60 seconds</h2>
+      <p>One install, one <code>.env</code> file, one line to verify anything.</p>
+    </div>
+
+    <div class="quickstart__grid">
+      <div class="reveal">
+        <div class="install-block">
+          <div class="install-block__tab-bar">
+            <button class="tab-btn active" data-tab-target="pip">pip</button>
+            <button class="tab-btn" data-tab-target="usage">Python</button>
+            <button class="tab-btn" data-tab-target="cli">CLI</button>
+            <button class="tab-btn" data-tab-target="stream">Streaming</button>
+          </div>
+
+          <!-- pip install -->
+          <div class="tab-content active" data-tab="pip">
+            <div class="code-block">
+              <button class="code-block__copy">Copy</button>
+              <pre><span class="t-prompt">$</span> <span class="t-cmd">pip install consensusflow</span>
+
+<span class="cm"># Create your .env file</span>
+<span class="t-prompt">$</span> <span class="t-cmd">cat > .env &lt;&lt; EOF
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=AIza...
+EOF</span></pre>
+            </div>
+          </div>
+
+          <!-- Python usage -->
+          <div class="tab-content" data-tab="usage">
+            <div class="code-block">
+              <button class="code-block__copy">Copy</button>
+              <pre><span class="kw">import</span> asyncio
+<span class="kw">from</span> <span class="cls">consensusflow</span> <span class="kw">import</span> verify, render_markdown
+
+<span class="cm"># One line to verify any prompt</span>
+report = asyncio.run(verify(
+    <span class="str">"Plan a 2-day trip to Istanbul"</span>,
+    chain=[
+        <span class="str">"gpt-4o"</span>,
+        <span class="str">"gemini/gemini-2.0-flash"</span>,
+        <span class="str">"claude-3-7-sonnet-20250219"</span>,
+    ]
+))
+
+<span class="fn">print</span>(report.final_answer)
+<span class="fn">print</span>(render_markdown(report))  <span class="cm"># Full audit trail</span></pre>
+            </div>
+          </div>
+
+          <!-- CLI -->
+          <div class="tab-content" data-tab="cli">
+            <div class="code-block">
+              <button class="code-block__copy">Copy</button>
+              <pre><span class="cm"># Basic verification</span>
+<span class="t-prompt">$</span> consensusflow <span class="str">"Is the Blue Mosque free?"</span>
+
+<span class="cm"># Custom chain + save report</span>
+<span class="t-prompt">$</span> consensusflow <span class="str">"Topkapi Palace hours 2026"</span> \
+    --chain gpt-4o gemini/gemini-2.0-flash \
+             claude-3-7-sonnet-20250219 \
+    --output markdown \
+    --save report.md
+
+<span class="cm"># Stream output live</span>
+<span class="t-prompt">$</span> consensusflow <span class="str">"Istanbul 2-day itinerary"</span> --stream</pre>
+            </div>
+          </div>
+
+          <!-- Streaming -->
+          <div class="tab-content" data-tab="stream">
+            <div class="code-block">
+              <button class="code-block__copy">Copy</button>
+              <pre><span class="kw">import</span> asyncio
+<span class="kw">from</span> <span class="cls">consensusflow</span> <span class="kw">import</span> SequentialChain
+
+<span class="kw">async def</span> <span class="fn">main</span>():
+    chain = <span class="cls">SequentialChain</span>()
+
+    <span class="cm"># Yields events as each step completes</span>
+    <span class="kw">async for</span> event <span class="kw">in</span> chain.<span class="fn">stream</span>(
+        <span class="str">"Plan a 2-day Istanbul trip"</span>
+    ):
+        <span class="kw">if</span> event[<span class="str">"event"</span>] == <span class="str">"proposer_chunk"</span>:
+            <span class="fn">print</span>(event[<span class="str">"data"</span>], end=<span class="str">""</span>, flush=<span class="num">True</span>)
+        <span class="kw">elif</span> event[<span class="str">"event"</span>] == <span class="str">"done"</span>:
+            <span class="fn">print</span>(<span class="str">"\n✅ Verified!"</span>)
+
+asyncio.<span class="fn">run</span>(<span class="fn">main</span>())</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="reveal reveal-delay-2">
+        <h3 style="margin-bottom:12px;font-size:1.05rem;">Swap any model, any provider</h3>
+        <p style="font-size:.875rem;color:var(--text-400);margin-bottom:20px;line-height:1.7;">
+          ConsensusFlow uses <strong>LiteLLM</strong> as its gateway — giving you access to
+          100+ models with zero extra configuration. Just set the right API key.
+        </p>
+
+        <div class="env-list">
+          <h4>Supported providers (.env)</h4>
+          <div class="env-item">
+            <span class="env-item__key">OPENAI_API_KEY</span>
+            <span class="env-item__eq">=</span>
+            <span class="env-item__val">"sk-..."</span>
+            <span class="env-item__provider">OpenAI / Azure</span>
+          </div>
+          <div class="env-item">
+            <span class="env-item__key">ANTHROPIC_API_KEY</span>
+            <span class="env-item__eq">=</span>
+            <span class="env-item__val">"sk-ant-..."</span>
+            <span class="env-item__provider">Anthropic Claude</span>
+          </div>
+          <div class="env-item">
+            <span class="env-item__key">GEMINI_API_KEY</span>
+            <span class="env-item__eq">=</span>
+            <span class="env-item__val">"AIza..."</span>
+            <span class="env-item__provider">Google Gemini</span>
+          </div>
+          <div class="env-item">
+            <span class="env-item__key">COHERE_API_KEY</span>
+            <span class="env-item__eq">=</span>
+            <span class="env-item__val">"..."</span>
+            <span class="env-item__provider">Cohere Command</span>
+          </div>
+          <div class="env-item">
+            <span class="env-item__key">OLLAMA_API_BASE</span>
+            <span class="env-item__eq">=</span>
+            <span class="env-item__val">"http://localhost:11434"</span>
+            <span class="env-item__provider">Local / Ollama</span>
+          </div>
+        </div>
+
+        <div style="margin-top:24px;padding:16px 20px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);">
+          <p style="font-size:.8rem;color:var(--text-400);margin-bottom:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Model string format</p>
+          <code style="font-size:.8rem;color:var(--blue-400);">provider/model-name</code>
+          <div style="margin-top:10px;font-size:.8rem;color:var(--text-400);display:flex;flex-direction:column;gap:4px;">
+            <span><code style="color:var(--purple-400);">"gpt-4o"</code> · <code style="color:var(--purple-400);">"gpt-4o-mini"</code></span>
+            <span><code style="color:var(--purple-400);">"gemini/gemini-2.0-flash"</code></span>
+            <span><code style="color:var(--purple-400);">"claude-3-7-sonnet-20250219"</code></span>
+            <span><code style="color:var(--purple-400);">"ollama/llama3.3"</code></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     BENCHMARKS
+════════════════════════════════════════ -->
+<section class="benchmarks section" id="benchmarks">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="tag">📊 Benchmarks</div>
+      <h2>50 known hallucinations.<br/>ConsensusFlow caught 95% of them.</h2>
+      <p>Tested against real-world queries where GPT-4o alone was known to hallucinate. March 2026 dataset.</p>
+    </div>
+
+    <div class="bench-table-wrap reveal">
+      <table class="bench-table">
+        <thead>
+          <tr>
+            <th>Query Type</th>
+            <th>GPT-4o Alone</th>
+            <th>ConsensusFlow</th>
+            <th>Improvement</th>
+            <th>Category</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Historical dates & events</td>
+            <td>
+              <div class="score-bar">
+                <div class="score-bar__track"><div class="score-bar__fill score-bar__fill--gpt" data-width="72%" style="width:0%"></div></div>
+                <span class="score-bar__num score-bar__num--low">72%</span>
+              </div>
+            </td>
+            <td>
+              <div class="score-bar">
+                <div class="score-bar__track"><div class="score-bar__fill score-bar__fill--cf" data-width="97%" style="width:0%"></div></div>
+                <span class="score-bar__num score-bar__num--high">97%</span>
+              </div>
+            </td>
+            <td style="color:var(--green-400);font-weight:700;">+25%</td>
+            <td><span class="bench-tag bench-tag--dates">Dates</span></td>
+          </tr>
+          <tr>
+            <td>Opening hours & schedules</td>
+            <td>
+              <div class="score-bar">
+                <div class="score-bar__track"><div class="score-bar__fill score-bar__fill--gpt" data-width="58%" style="width:0%"></div></div>
+                <span class="score-bar__num score-bar__num--low">58%</span>
+              </div>
+            </td>
+            <td>
+              <div class="score-bar">
+                <div class="score-bar__track"><div class="score-bar__fill score-bar__fill--cf" data-width="94%" style="width:0%"></div></div>
+                <span class="score-bar__num score-bar__num--high">94%</span>
+              </div>
+            </td>
+            <td style="color:var(--green-400);font-weight:700;">+36%</td>
+            <td><span class="bench-tag bench-tag--hours">Hours</span></td>
+          </tr>
+          <tr>
+            <td>Prices & admission fees</td>
+            <td>
+              <div class="score-bar">
+                <div class="score-bar__track"><div class="score-bar__fill score-bar__fill--gpt" data-width="61%" style="width:0%"></div></div>
+                <span class="score-bar__num score-bar__num--low">61%</span>
+              </div>
+            </td>
+            <td>
+              <div class="score-bar">
+                <div class="score-bar__track"><div class="score-bar__fill score-bar__fill--cf" data-width="96%" style="width:0%"></div></div>
+                <span class="score-bar__num score-bar__num--high">96%</span>
+              </div>
+            </td>
+            <td style="color:var(--green-400);font-weight:700;">+35%</td>
+            <td><span class="bench-tag bench-tag--prices">Prices</span></td>
+          </tr>
+          <tr>
+            <td>Statistics & population data</td>
+            <td>
+              <div class="score-bar">
+                <div class="score-bar__track"><div class="score-bar__fill score-bar__fill--gpt" data-width="69%" style="width:0%"></div></div>
+                <span class="score-bar__num score-bar__num--low">69%</span>
+              </div>
+            </td>
+            <td>
+              <div class="score-bar">
+                <div class="score-bar__track"><div class="score-bar__fill score-bar__fill--cf" data-width="91%" style="width:0%"></div></div>
+                <span class="score-bar__num score-bar__num--high">91%</span>
+              </div>
+            </td>
+            <td style="color:var(--green-400);font-weight:700;">+22%</td>
+            <td><span class="bench-tag bench-tag--stats">Stats</span></td>
+          </tr>
+          <tr>
+            <td>Geographic & location facts</td>
+            <td>
+              <div class="score-bar">
+                <div class="score-bar__track"><div class="score-bar__fill score-bar__fill--gpt" data-width="74%" style="width:0%"></div></div>
+                <span class="score-bar__num score-bar__num--low">74%</span>
+              </div>
+            </td>
+            <td>
+              <div class="score-bar">
+                <div class="score-bar__track"><div class="score-bar__fill score-bar__fill--cf" data-width="98%" style="width:0%"></div></div>
+                <span class="score-bar__num score-bar__num--high">98%</span>
+              </div>
+            </td>
+            <td style="color:var(--green-400);font-weight:700;">+24%</td>
+            <td><span class="bench-tag bench-tag--geography">Geography</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="benchmarks__summary">
+      <div class="bench-stat reveal">
+        <span class="bench-stat__value" data-target="95" data-suffix="%">95%</span>
+        <span class="bench-stat__label">Overall hallucination catch rate</span>
+      </div>
+      <div class="bench-stat reveal reveal-delay-1">
+        <span class="bench-stat__value" data-target="50">50</span>
+        <span class="bench-stat__label">Known hallucination queries tested</span>
+      </div>
+      <div class="bench-stat reveal reveal-delay-2">
+        <span class="bench-stat__value" data-target="33" data-suffix="%">33%</span>
+        <span class="bench-stat__label">Token savings via Early Exit</span>
+      </div>
+      <div class="bench-stat reveal reveal-delay-3">
+        <span class="bench-stat__value" data-target="3" data-suffix="x">3x</span>
+        <span class="bench-stat__label">Models working in consensus</span>
+      </div>
+    </div>
+
+    <p class="reveal" style="text-align:center;font-size:.8125rem;color:var(--text-600);margin-top:32px;">
+      Benchmarks run on AISTANBUL-50 dataset (Istanbul tourism hallucination queries), March 2026.
+      <a href="https://github.com/omer/consensusflow/tree/main/benchmarks" target="_blank" rel="noopener">Reproduce the results →</a>
+    </p>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     CTA
+════════════════════════════════════════ -->
+<section class="cta-section section" id="cta">
+  <div class="cta-section__bg" aria-hidden="true"></div>
+  <div class="container">
+    <div class="cta-section__inner reveal">
+      <div class="tag" style="margin:0 auto 20px;">🔍 Open Source</div>
+      <h2>Stop shipping hallucinations.<br/>Start shipping trust.</h2>
+      <p>
+        ConsensusFlow is free, open source, and designed to drop into any
+        existing LLM pipeline in minutes.
+      </p>
+      <div class="cta-section__buttons">
+        <a href="https://github.com/omer/consensusflow" target="_blank" rel="noopener" class="btn btn--primary btn--large">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          View on GitHub
+        </a>
+        <a href="#quickstart" class="btn btn--ghost btn--large">
+          Read the Docs
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+      <p class="cta-section__note">
+        MIT License · No telemetry · Works offline with Ollama
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════
+     FOOTER
+════════════════════════════════════════ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer__inner">
+      <div class="footer__brand">
+        <a href="#" class="nav__logo" style="text-decoration:none;">
+          <div class="nav__logo-icon">🔍</div>
+          ConsensusFlow
+        </a>
+        <p>The Trust Protocol for Verified AI Outputs. Built with Python, LiteLLM, and a healthy distrust of single-model answers.</p>
+      </div>
+
+      <div class="footer__col">
+        <h5>Project</h5>
+        <ul>
+          <li><a href="https://github.com/omer/consensusflow" target="_blank" rel="noopener">GitHub Repository</a></li>
+          <li><a href="https://github.com/omer/consensusflow/releases" target="_blank" rel="noopener">Releases</a></li>
+          <li><a href="https://github.com/omer/consensusflow/issues" target="_blank" rel="noopener">Report an Issue</a></li>
+          <li><a href="https://github.com/omer/consensusflow/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a></li>
+        </ul>
+      </div>
+
+      <div class="footer__col">
+        <h5>Docs</h5>
+        <ul>
+          <li><a href="#quickstart">Quick Start</a></li>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#benchmarks">Benchmarks</a></li>
+          <li><a href="https://github.com/omer/consensusflow/blob/main/README.md" target="_blank" rel="noopener">Full README</a></li>
+        </ul>
+      </div>
+
+      <div class="footer__col">
+        <h5>Ecosystem</h5>
+        <ul>
+          <li><a href="https://litellm.ai" target="_blank" rel="noopener">LiteLLM</a></li>
+          <li><a href="https://platform.openai.com" target="_blank" rel="noopener">OpenAI</a></li>
+          <li><a href="https://ai.google.dev" target="_blank" rel="noopener">Google Gemini</a></li>
+          <li><a href="https://anthropic.com" target="_blank" rel="noopener">Anthropic Claude</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer__bottom">
+      <p>© 2026 ConsensusFlow. Released under the MIT License.</p>
+      <div class="footer__bottom-links">
+        <a href="https://github.com/omer/consensusflow/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+        <a href="https://github.com/omer/consensusflow/blob/main/README.md" target="_blank" rel="noopener">README</a>
+        <a href="https://github.com/omer/consensusflow" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- Scripts -->
+<script src="assets/js/main.js"></script>
+<script src="assets/js/demo.js"></script>
+
+</body>
+</html>

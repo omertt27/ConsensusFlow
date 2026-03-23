@@ -1,0 +1,105 @@
+/* ============================================================
+   ConsensusFlow — Terminal Animation Styles
+   ============================================================ */
+
+.demo-terminal { position: relative; }
+
+/* Typing animation layers */
+.typed-line {
+  display: block;
+  overflow: hidden;
+  white-space: pre;
+  opacity: 0;
+}
+
+.typed-line.visible { opacity: 1; }
+
+/* Step indicator pill */
+.step-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 100px;
+  margin: 4px 0;
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: opacity .4s, transform .4s;
+}
+
+.step-pill.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.step-pill--proposer {
+  background: var(--blue-500)22;
+  color: var(--blue-400);
+  border: 1px solid var(--blue-500)44;
+}
+
+.step-pill--auditor {
+  background: var(--yellow-400)22;
+  color: var(--yellow-400);
+  border: 1px solid var(--yellow-400)44;
+}
+
+.step-pill--resolver {
+  background: var(--green-500)22;
+  color: var(--green-400);
+  border: 1px solid var(--green-500)44;
+}
+
+.step-pill--early {
+  background: var(--purple-400)22;
+  color: var(--purple-400);
+  border: 1px solid var(--purple-400)44;
+}
+
+/* Spinning loader for "verifying..." state */
+.spin {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Progress bar for token savings */
+.token-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  margin: 6px 0;
+}
+
+.token-bar__fill {
+  height: 100%;
+  border-radius: 2px;
+  width: 0;
+  background: linear-gradient(90deg, var(--blue-500), var(--green-400));
+  transition: width 1.2s var(--ease-out);
+}
+
+/* Replay button */
+.demo__replay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-400);
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all .2s;
+}
+
+.demo__replay:hover {
+  border-color: var(--blue-500)66;
+  color: var(--text-100);
+}

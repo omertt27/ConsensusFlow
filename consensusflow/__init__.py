@@ -13,7 +13,7 @@ Swap models::
 
     report = asyncio.run(verify(
         "Is Istanbul safe for solo travelers in 2026?",
-        chain=["gpt-4o", "gemini/gemini-1.5-pro", "claude-3-5-sonnet-20241022"],
+        chain=["gpt-4o", "gemini/gemini-2.0-flash", "claude-3-5-sonnet-20241022"],
     ))
 """
 

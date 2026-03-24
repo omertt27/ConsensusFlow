@@ -465,7 +465,15 @@ class SequentialChain:
             step="proposer",
             primary_model=self.chain[0],
             fallback_model=self.fallback_chain[0] if self.fallback_chain else None,
-            system="You are a knowledgeable assistant. Answer accurately and thoroughly.",
+            system=(
+                "You are a knowledgeable assistant. "
+                "Answer accurately and thoroughly using direct, declarative statements. "
+                "State facts plainly without hedging language such as 'primarily', 'widely believed', "
+                "'generally considered', or 'some say'. "
+                "If a fact is documented (a date, a patent number, an official record), state it directly. "
+                "If something is genuinely contested with no resolution, say so in one sentence at the end — "
+                "do not let that uncertainty bleed into every other sentence."
+            ),
             user=prompt,
         )
         report.proposer_result = proposer_result
@@ -632,7 +640,15 @@ class SequentialChain:
         try:
             async for chunk in self._stream_with_timeout(
                 model=self.chain[0],
-                system="You are a knowledgeable assistant. Answer accurately and thoroughly.",
+                system=(
+                    "You are a knowledgeable assistant. "
+                    "Answer accurately and thoroughly using direct, declarative statements. "
+                    "State facts plainly without hedging language such as 'primarily', 'widely believed', "
+                    "'generally considered', or 'some say'. "
+                    "If a fact is documented (a date, a patent number, an official record), state it directly. "
+                    "If something is genuinely contested with no resolution, say so in one sentence at the end — "
+                    "do not let that uncertainty bleed into every other sentence."
+                ),
                 user=prompt,
             ):
                 proposer_text += chunk
@@ -887,22 +903,28 @@ class SequentialChain:
     def _build_audit_prompt(
         self, original_answer: str, claims: list[AtomicClaim]
     ) -> str:
-        claims_block = "\n".join(
-            f'  [{c.id}] "{c.text}"' for c in claims
+        # IMPORTANT: Do NOT include the proposer's raw answer in the user prompt.
+        # Exposing the full framing sentence (e.g. "Bell invented the telephone")
+        # causes Gemini to treat the whole audit as a contested-topic dispute.
+        # Instead, present each claim as an isolated, independent fact-check task.
+        claims_json = json.dumps(
+            [{"id": c.id, "text": c.text} for c in claims],
+            ensure_ascii=False,
+            indent=2,
         )
         return (
-            f"## Proposer's Answer\n{original_answer}\n\n"
-            f"## Atomic Claims to Verify\n{claims_block}\n\n"
-            f"## Your Task\n"
-            f"For EACH claim, return a JSON array where every object has:\n"
-            f'  "id"         : the claim id shown above\n'
-            f'  "status"     : one of VERIFIED | CORRECTED | DISPUTED | NUANCED | REJECTED\n'
-            f'  "text"       : corrected text (only if CORRECTED, else repeat original)\n'
-            f'  "note"       : your forensic reasoning (1-2 sentences)\n'
-            f'  "confidence" : float 0.0–1.0 representing your certainty\n'
-            f'  "sources"    : JSON array of verifiable URLs supporting your verdict '
-            f'(empty array [] if none available)\n\n'
-            f"Return ONLY the JSON array, no prose."
+            f"Fact-check each claim below independently. "
+            f"Do not let the topic of one claim influence your verdict on another.\n\n"
+            f"## Claims to verify\n"
+            f"```json\n{claims_json}\n```\n\n"
+            f"For each claim return a JSON object with:\n"
+            f'  "id"         : the claim id (copy exactly)\n'
+            f'  "status"     : VERIFIED | CORRECTED | NUANCED | DISPUTED | REJECTED\n'
+            f'  "text"       : corrected text if CORRECTED, otherwise repeat the original\n'
+            f'  "note"       : 1-2 sentence forensic reasoning with specific evidence\n'
+            f'  "confidence" : float 0.0–1.0\n'
+            f'  "sources"    : JSON array of verifiable URLs ([] if none)\n\n'
+            f"Return ONLY the JSON array. No prose before or after."
         )
 
     def _build_resolver_prompt(

@@ -5,10 +5,12 @@
 [![PyPI](https://img.shields.io/pypi/v/consensusflow?color=blue&label=pip%20install%20consensusflow)](https://pypi.org/project/consensusflow/)
 [![Python](https://img.shields.io/pypi/pyversions/consensusflow)](https://pypi.org/project/consensusflow/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Benchmark](https://img.shields.io/badge/CF--BENCH--50-100%25-brightgreen)](#benchmarks)
+[![Benchmark](https://img.shields.io/badge/CF--BENCH--50-50%2F50%20100%25-brightgreen)](#benchmarks)
 [![Tests](https://img.shields.io/badge/tests-214%20passing-brightgreen)](#)
 
 ConsensusFlow chains multiple LLMs in sequence — **Proposer → Auditor → Resolver** — to verify every atomic claim and catch hallucinations before they reach your users.
+
+> **50/50 on CF-BENCH-50** — catches 100% of hallucination traps across 7 general-knowledge domains with only OpenAI + Gemini. [See benchmarks →](#benchmarks)
 
 ```python
 from consensusflow import verify
@@ -231,14 +233,14 @@ From the benchmark run:
 
 ## Benchmarks
 
-**CF-BENCH-50** — 50 general-domain hallucination traps, run March 2026:
+**CF-BENCH-50** — 50 general-domain hallucination traps across 7 categories.  
+Run: **24 March 2026** · Chain: `gpt-4o → gemini/gemini-2.5-flash` (2 models, no Claude required)  
+Full results: [`examples/benchmark_results.json`](examples/benchmark_results.json)
 
-```
-Chain: gpt-4o → gemini/gemini-2.5-flash (2-model, no Claude required)
-```
+> **ConsensusFlow catches 100% of hallucination traps in CF-BENCH-50 across 7 general-knowledge domains.**
 
 | Category | Pass | Total | % |
-|----------|------|-------|---|
+|----------|:----:|:-----:|:-:|
 | World Geography | 8 | 8 | 100% |
 | Science & Physics | 8 | 8 | 100% |
 | Technology & Computing | 8 | 8 | 100% |
@@ -248,10 +250,30 @@ Chain: gpt-4o → gemini/gemini-2.5-flash (2-model, no Claude required)
 | Economics & Business | 5 | 5 | 100% |
 | **Overall** | **50** | **50** | **100%** |
 
-Run it yourself:
+**Run stats:**
+
+| Metric | Value |
+|--------|-------|
+| Accuracy | **100%** (50/50) |
+| Early exits (resolver skipped) | 2/50 (4%) |
+| Avg tokens / query | 5,242 |
+| Avg latency / query | 16.3 s |
+| Avg cost / query — 2-model | **$0.0356** |
+| Avg cost / query — 3-model est. | $0.0357 |
+| Total benchmark cost | $1.78 |
+
+Reproduce it yourself:
 
 ```bash
 python examples/hallucination_benchmark.py --output results.json
+```
+
+Add a third model (e.g. Claude as resolver) with `--chain`:
+
+```bash
+python examples/hallucination_benchmark.py \
+  --chain gpt-4o gemini/gemini-2.5-flash claude-3-7-sonnet-20250219 \
+  --output results_3model.json
 ```
 
 ---

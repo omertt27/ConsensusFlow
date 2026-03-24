@@ -136,17 +136,24 @@ for claim in report.atomic_claims:
 ### CLI
 
 ```bash
-# Basic
+# Basic (uses default chain: gpt-4o → gemini/gemini-2.5-flash → gpt-4o-mini)
 consensusflow "Who wrote Don Quixote?"
 
-# Custom chain + save report
+# 2-model chain (resolver automatically reuses the proposer)
 consensusflow "Explain general relativity" \
   --chain gpt-4o gemini/gemini-2.5-flash \
   --output markdown \
   --save report.md
 
+# 3-model chain (explicit resolver)
+consensusflow "Summarise the French Revolution" \
+  --chain gpt-4o gemini/gemini-2.5-flash claude-3-7-sonnet-20250219
+
 # Streaming
 consensusflow "Summarise the French Revolution" --stream
+
+# With budget cap
+consensusflow "..." --budget 0.05 --fallback gpt-4o-mini gemini/gemini-2.5-flash
 ```
 
 ### Streaming API

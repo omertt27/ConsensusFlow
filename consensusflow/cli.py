@@ -26,10 +26,11 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   consensusflow "Is the Blue Mosque free to enter in 2026?"
+  consensusflow "What year did the Berlin Wall fall?" --chain gpt-4o gemini/gemini-2.5-flash
   consensusflow "What time does Topkapi Palace open?" --chain gpt-4o gemini/gemini-2.5-flash claude-3-5-sonnet-20241022
   consensusflow "Plan a 2-day Istanbul trip" --output markdown > report.md
   consensusflow "..." --stream --output terminal
-  consensusflow "..." --budget 0.05 --fallback gpt-4-turbo gemini/gemini-2.5-flash claude-3-haiku-20240307
+  consensusflow "..." --budget 0.05 --fallback gpt-4o-mini gemini/gemini-2.5-flash
         """,
     )
     parser.add_argument(
@@ -39,17 +40,25 @@ Examples:
     )
     parser.add_argument(
         "--chain",
-        nargs=3,
-        metavar=("PROPOSER", "AUDITOR", "RESOLVER"),
+        nargs="+",
+        metavar="MODEL",
         default=None,
-        help="Three LiteLLM model strings (proposer auditor resolver).",
+        help=(
+            "2 or 3 LiteLLM model strings for the pipeline. "
+            "2-model: PROPOSER AUDITOR (resolver reuses proposer). "
+            "3-model: PROPOSER AUDITOR RESOLVER. "
+            "Example: --chain gpt-4o gemini/gemini-2.5-flash"
+        ),
     )
     parser.add_argument(
         "--fallback",
-        nargs=3,
-        metavar=("PROPOSER", "AUDITOR", "RESOLVER"),
+        nargs="+",
+        metavar="MODEL",
         default=None,
-        help="Fallback chain used if the primary chain fails.",
+        help=(
+            "Fallback chain (2 or 3 models) used if the primary chain fails. "
+            "Example: --fallback gpt-4o-mini gemini/gemini-2.5-flash"
+        ),
     )
     parser.add_argument(
         "--extractor",
@@ -228,6 +237,12 @@ def main() -> None:
     if not args.prompt:
         parser.print_help()
         sys.exit(1)
+
+    # Validate chain / fallback lengths
+    if args.chain is not None and len(args.chain) not in (2, 3):
+        parser.error("--chain requires 2 or 3 model names (PROPOSER AUDITOR [RESOLVER])")
+    if args.fallback is not None and len(args.fallback) not in (2, 3):
+        parser.error("--fallback requires 2 or 3 model names (PROPOSER AUDITOR [RESOLVER])")
 
     try:
         if args.stream:

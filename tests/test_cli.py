@@ -57,10 +57,22 @@ class TestBuildParser:
         args = parser.parse_args(["Q?", "--chain", "m1", "m2", "m3"])
         assert args.chain == ["m1", "m2", "m3"]
 
+    def test_chain_two_models(self):
+        """--chain accepts exactly 2 models (resolver reuses proposer in the engine)."""
+        parser = _build_parser()
+        args = parser.parse_args(["Q?", "--chain", "gpt-4o", "gemini/gemini-2.5-flash"])
+        assert args.chain == ["gpt-4o", "gemini/gemini-2.5-flash"]
+
     def test_fallback_chain(self):
         parser = _build_parser()
         args = parser.parse_args(["Q?", "--fallback", "f1", "f2", "f3"])
         assert args.fallback == ["f1", "f2", "f3"]
+
+    def test_fallback_chain_two_models(self):
+        """--fallback also accepts 2 models."""
+        parser = _build_parser()
+        args = parser.parse_args(["Q?", "--fallback", "gpt-4o-mini", "gemini/gemini-2.5-flash"])
+        assert args.fallback == ["gpt-4o-mini", "gemini/gemini-2.5-flash"]
 
     def test_output_choices(self):
         parser = _build_parser()
@@ -436,3 +448,17 @@ class TestMain:
                 with pytest.raises(SystemExit) as exc_info:
                     main()
         assert exc_info.value.code == 0
+
+    def test_chain_length_1_is_rejected(self):
+        """--chain with only 1 model should trigger a parser error (exit 2)."""
+        with patch("sys.argv", ["consensusflow", "Q?", "--chain", "gpt-4o"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 2
+
+    def test_chain_length_4_is_rejected(self):
+        """--chain with 4 models should trigger a parser error (exit 2)."""
+        with patch("sys.argv", ["consensusflow", "Q?", "--chain", "m1", "m2", "m3", "m4"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 2

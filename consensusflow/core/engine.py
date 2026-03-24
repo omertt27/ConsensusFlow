@@ -44,6 +44,32 @@ log = logging.getLogger("consensusflow.engine")
 
 
 # ─────────────────────────────────────────────
+# Auditor reliability guard
+# ─────────────────────────────────────────────
+
+_DISPUTE_THRESHOLD = 0.60   # >60% DISPUTED in one run = auditor drift
+
+def _check_auditor_reliability(claims: list) -> str | None:
+    """
+    Return a warning string if the auditor appears to have drifted
+    (i.e. marked an implausibly high fraction of claims as DISPUTED).
+    Returns None when the audit looks healthy.
+    """
+    if not claims:
+        return None
+    disputed = sum(1 for c in claims if c.status == ClaimStatus.DISPUTED)
+    ratio = disputed / len(claims)
+    if ratio > _DISPUTE_THRESHOLD:
+        return (
+            f"Auditor reliability warning: {disputed}/{len(claims)} claims "
+            f"({ratio:.0%}) marked DISPUTED — possible auditor drift. "
+            "The auditor may have confused a contested topic with unverifiable "
+            "individual claims. Review results critically."
+        )
+    return None
+
+
+# ─────────────────────────────────────────────
 # Token accounting (tiktoken)
 # ─────────────────────────────────────────────
 
@@ -229,7 +255,7 @@ class SequentialChain:
     Usage::
 
         chain = SequentialChain(
-            chain=["gpt-4o", "gemini/gemini-2.5-flash", "claude-3-5-sonnet-20241022"],
+            chain=["gpt-4o", "gemini/gemini-2.5-flash", "gpt-4o-mini"],
             extractor_model="gpt-4o-mini",
             similarity_threshold=0.92,
             enable_cache=True,
@@ -268,9 +294,9 @@ class SequentialChain:
     """
 
     DEFAULT_CHAIN = [
-        "gpt-4o",
-        "gemini/gemini-2.5-flash",
-        "claude-3-5-sonnet-20241022",
+        "gpt-4o",               # Proposer  — OpenAI
+        "gemini/gemini-2.5-flash",  # Auditor   — Google
+        "gpt-4o-mini",          # Resolver  — OpenAI (fast, cheap fallback; swap for Claude/Mistral etc.)
     ]
 
     def __init__(
@@ -288,7 +314,15 @@ class SequentialChain:
         cache_maxsize: int = 256,
         webhook_url: str | None = None,
     ):
-        self.chain               = chain or self.DEFAULT_CHAIN
+        raw_chain = chain or self.DEFAULT_CHAIN
+        # Allow 2-model shorthand: [proposer, auditor] → resolver reuses proposer
+        if len(raw_chain) == 2:
+            raw_chain = [raw_chain[0], raw_chain[1], raw_chain[0]]
+            log.info(
+                "2-model chain detected — resolver will reuse proposer: %s",
+                raw_chain[0],
+            )
+        self.chain               = raw_chain
         self.extractor_model     = extractor_model
         self.similarity_threshold = similarity_threshold
         self.stream_callback     = stream_callback
@@ -300,13 +334,21 @@ class SequentialChain:
 
         if len(self.chain) != 3:
             raise ChainConfigError(
-                "chain must have exactly 3 models: [proposer, auditor, resolver]"
+                "chain must have 2 or 3 models: [proposer, auditor] or "
+                "[proposer, auditor, resolver]"
             )
 
-        if self.fallback_chain is not None and len(self.fallback_chain) != 3:
+        if self.fallback_chain is not None and len(self.fallback_chain) not in (2, 3):
             raise ChainConfigError(
-                "fallback_chain must have exactly 3 models: [proposer, auditor, resolver]"
+                "fallback_chain must have 2 or 3 models"
             )
+        # Normalise fallback chain the same way
+        if self.fallback_chain is not None and len(self.fallback_chain) == 2:
+            self.fallback_chain = [
+                self.fallback_chain[0],
+                self.fallback_chain[1],
+                self.fallback_chain[0],
+            ]
 
         self._client = LiteLLMClient(timeout=timeout)
 
@@ -373,6 +415,13 @@ class SequentialChain:
         )
         self._emit("auditor_done", auditor_result.raw_text)
 
+        # ── Auditor reliability guard ─────────
+        report.auditor_reliability_warning = _check_auditor_reliability(report.atomic_claims)
+        if report.auditor_reliability_warning:
+            log.warning(
+                "Auditor reliability warning: %s", report.auditor_reliability_warning
+            )
+
         # ── Step 3: Early-Exit Check ─────────
         similarity = _compute_similarity(
             proposer_result.raw_text, auditor_result.raw_text
@@ -390,8 +439,16 @@ class SequentialChain:
             report.early_exit   = True
             report.final_answer = proposer_result.raw_text
             report.status       = ChainStatus.EARLY_EXIT
-            # Estimate tokens that would have been used by resolver
-            report.saved_tokens = proposer_result.total_tokens // 2
+            # saved_tokens = resolver's estimated consumption.
+            # Conservative: use proposer's completion tokens (resolver typically
+            # produces a similar-length synthesis). This is also correct in the
+            # 2-model case where resolver == proposer — same token budget.
+            report.saved_tokens = proposer_result.completion_tokens or (proposer_result.total_tokens // 2)
+            # saved_cost uses the resolver slot's own per-token rate (correct for
+            # both 2-model and 3-model chains).
+            from consensusflow.core.scoring import _rate_for_model
+            resolver_rate = _rate_for_model(self.chain[2])
+            report.saved_cost_usd = report.saved_tokens * resolver_rate / 1000
             self._emit("early_exit", report.final_answer)
         else:
             # ── Step 3: Resolver ─────────────
@@ -542,6 +599,12 @@ class SequentialChain:
         report.auditor_result = auditor_result
         report.atomic_claims = _parse_audit_from_json(auditor_text, claims)
 
+        # Auditor reliability guard (streaming path)
+        report.auditor_reliability_warning = _check_auditor_reliability(report.atomic_claims)
+        if report.auditor_reliability_warning:
+            log.warning("Auditor reliability warning: %s", report.auditor_reliability_warning)
+            yield {"event": "auditor_warning", "data": report.auditor_reliability_warning}
+
         # Early-exit check (streaming path)
         similarity = _compute_similarity(proposer_text, auditor_text)
         report.similarity_score = similarity
@@ -551,10 +614,13 @@ class SequentialChain:
             report.early_exit   = True
             report.final_answer = proposer_text
             report.status       = ChainStatus.EARLY_EXIT
-            report.saved_tokens = proposer_result.total_tokens // 2
+            report.saved_tokens = proposer_result.completion_tokens or (proposer_result.total_tokens // 2)
+            from consensusflow.core.scoring import _rate_for_model
+            report.saved_cost_usd = report.saved_tokens * _rate_for_model(self.chain[2]) / 1000
             yield {"event": "early_exit", "data": {
                 "message": "100% consensus achieved. Resolver skipped.",
                 "saved_tokens": report.saved_tokens,
+                "saved_cost_usd": report.saved_cost_usd,
             }}
         else:
             # Resolver — streaming
@@ -796,13 +862,24 @@ async def verify(
     One-line entry point::
 
         from consensusflow import verify
-        report = await verify("Plan a trip to Istanbul.")
+
+        # 2-model shorthand (resolver reuses proposer automatically):
+        report = await verify("Plan a trip to Istanbul.",
+                              chain=["gpt-4o", "gemini/gemini-2.5-flash"])
+
+        # Full 3-model chain:
+        report = await verify("Plan a trip to Istanbul.",
+                              chain=["gpt-4o", "gemini/gemini-2.5-flash", "gpt-4o-mini"])
+
         print(report.final_answer)
 
     Parameters
     ----------
+    chain : list[str], optional
+        2 or 3 LiteLLM model strings.  When 2 are given the resolver
+        automatically reuses the proposer model.
     fallback_chain : list[str], optional
-        3-model fallback used if primary chain fails.
+        2- or 3-model fallback used if primary chain fails.
     budget_usd : float, optional
         Raise BudgetExceededError before resolver if cost exceeds this.
     enable_cache : bool

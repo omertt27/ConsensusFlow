@@ -105,8 +105,14 @@ def _mock_complete_early_exit(model, system, user, **_):
 
 class TestChainConfigValidation:
     def test_invalid_chain_length_raises(self):
+        # 2-model chains are now valid; only 0 or 4+ models should raise
         with pytest.raises(ChainConfigError):
-            SequentialChain(chain=["gpt-4o", "gemini"])
+            SequentialChain(chain=["gpt-4o", "gemini", "claude", "extra"])
+
+    def test_two_model_chain_expands_to_three(self):
+        """2-model [proposer, auditor] should auto-expand resolver = proposer."""
+        sc = SequentialChain(chain=["gpt-4o", "gemini/gemini-2.5-flash"])
+        assert sc.chain == ["gpt-4o", "gemini/gemini-2.5-flash", "gpt-4o"]
 
     def test_invalid_fallback_length_raises(self):
         with pytest.raises(ChainConfigError):

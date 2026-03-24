@@ -447,6 +447,8 @@ function ScoreCard({ score }) {
   const color = scoreColor(score.score)
   const circumference = 2 * Math.PI * 84
   const offset = circumference - (score.score / 100) * circumference
+  const hasWarning = !!score.auditor_reliability_warning
+  const showDual = hasWarning && score.score_excl_disputed !== undefined && score.score_excl_disputed !== score.score
 
   return (
     <div className="card score-card">
@@ -472,6 +474,28 @@ function ScoreCard({ score }) {
       </div>
       <div className="score-grade" style={{ color }}>{score.grade}</div>
       <div className="score-grade-label">{score.label}</div>
+      {showDual && (
+        <div className="score-dual">
+          <div className="score-dual-row">
+            <span className="score-dual-label">Excl. uncertain:</span>
+            <span className="score-dual-value" style={{ color: scoreColor(score.score_excl_disputed) }}>
+              {score.score_excl_disputed}/100
+            </span>
+          </div>
+          <div className="score-dual-row">
+            <span className="score-dual-label">Disputed claims:</span>
+            <span className="score-dual-value score-dual-warn">
+              {Math.round((score.disputed_ratio || 0) * 100)}%
+            </span>
+          </div>
+        </div>
+      )}
+      {hasWarning && (
+        <div className="auditor-warning">
+          <AlertTriangle size={13} />
+          <span>Auditor drift detected — review DISPUTED claims critically</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -538,13 +562,14 @@ function AnswerCard({ report, onCopy, copied }) {
 }
 
 function StepsGrid({ steps }) {
+  const stepsArray = Array.isArray(steps) ? steps : Object.values(steps || {})
   return (
     <div className="steps-grid">
-      {steps.filter(Boolean).map(step => (
+      {stepsArray.filter(Boolean).map(step => (
         <div key={step.step} className="step-card">
           <div className="step-header">
             <h4 className="step-title">
-              {PIPELINE_STEPS.find(s => s.key.startsWith(step.step.slice(0, 4)))?.icon({ size: 16 })}
+              {(() => { const Icon = PIPELINE_STEPS.find(s => s.key.startsWith(step.step.slice(0, 4)))?.icon; return Icon ? <Icon size={16} /> : null })()}
               {step.step.charAt(0).toUpperCase() + step.step.slice(1)}
             </h4>
             <div className="step-model">{step.model.split('/').pop()}</div>

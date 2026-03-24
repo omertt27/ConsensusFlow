@@ -135,6 +135,7 @@ class VerificationReport:
     similarity_score: float = 0.0          # 0.0 – 1.0 (1.0 = full consensus)
     early_exit: bool = False
     saved_tokens: int = 0                  # tokens saved by early exit
+    saved_cost_usd: float = 0.0            # USD saved by early exit (resolver skipped)
 
     # Aggregate cost
     total_tokens: int = 0
@@ -142,6 +143,9 @@ class VerificationReport:
 
     # Custom penalty weights forwarded from SequentialChain (optional)
     penalty_weights: Optional[Dict] = None
+
+    # Auditor reliability warning (set when >60% of claims are DISPUTED)
+    auditor_reliability_warning: Optional[str] = None
 
     # ── Convenience helpers ──────────────────
 
@@ -165,6 +169,13 @@ class VerificationReport:
     def rejected_count(self) -> int:
         return sum(1 for c in self.atomic_claims if c.status == ClaimStatus.REJECTED)
 
+    @property
+    def disputed_ratio(self) -> float:
+        """Fraction of claims that are DISPUTED (0.0–1.0)."""
+        if not self.atomic_claims:
+            return 0.0
+        return self.disputed_count / len(self.atomic_claims)
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "run_id": self.run_id,
@@ -175,6 +186,7 @@ class VerificationReport:
             "similarity_score": self.similarity_score,
             "early_exit": self.early_exit,
             "saved_tokens": self.saved_tokens,
+            "saved_cost_usd": round(self.saved_cost_usd, 6),
             "total_tokens": self.total_tokens,
             "total_latency_ms": self.total_latency_ms,
             "claim_summary": {
@@ -183,7 +195,9 @@ class VerificationReport:
                 "disputed": self.disputed_count,
                 "nuanced": self.nuanced_count,
                 "rejected": self.rejected_count,
+                "disputed_ratio": round(self.disputed_ratio, 3),
             },
+            "auditor_reliability_warning": self.auditor_reliability_warning,
             "atomic_claims": [c.to_dict() for c in self.atomic_claims],
             "steps": {
                 "proposer": self.proposer_result.to_dict() if self.proposer_result else None,

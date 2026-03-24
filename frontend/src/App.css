@@ -737,6 +737,58 @@
   letter-spacing: 1px;
 }
 
+.score-dual {
+  margin-top: .75rem;
+  padding: .6rem .8rem;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  width: 100%;
+}
+
+.score-dual-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .78rem;
+}
+
+.score-dual-label {
+  color: var(--muted);
+}
+
+.score-dual-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-dual-warn {
+  color: var(--yellow);
+}
+
+.auditor-warning {
+  margin-top: .6rem;
+  display: flex;
+  align-items: flex-start;
+  gap: .4rem;
+  padding: .55rem .75rem;
+  background: rgba(255, 200, 0, .08);
+  border: 1px solid rgba(255, 200, 0, .25);
+  border-radius: 8px;
+  font-size: .72rem;
+  color: var(--yellow);
+  line-height: 1.4;
+  width: 100%;
+}
+
+.auditor-warning svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
 /* ── Stats card ─────────────────────────────────────────────────────────── */
 .stats-card .stats-grid {
   display: grid;

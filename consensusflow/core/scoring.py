@@ -175,6 +175,7 @@ def _estimate_cost_usd(tokens: int, chain: list[str] | None = None) -> float:
     return tokens * blended_rate / 1000
 
 
+
 # ─────────────────────────────────────────────
 # Gotcha Score dataclass
 # ─────────────────────────────────────────────
@@ -213,6 +214,10 @@ class GotchaScore:
     total_claims: int = 0
     catches: int = 0
     share_text: str = ""
+    # Dual-score fields
+    score_excl_disputed: int = 100       # Score computed ignoring DISPUTED claims
+    disputed_ratio: float = 0.0          # Fraction of claims that are DISPUTED
+    auditor_reliability_warning: str | None = None  # Set when disputed_ratio > 0.60
 
     def to_dict(self) -> dict:
         return {
@@ -225,6 +230,9 @@ class GotchaScore:
             "penalty_breakdown": self.penalty_breakdown,
             "failure_taxonomy": self.failure_taxonomy,
             "share_text": self.share_text,
+            "score_excl_disputed": self.score_excl_disputed,
+            "disputed_ratio": round(self.disputed_ratio, 3),
+            "auditor_reliability_warning": self.auditor_reliability_warning,
         }
 
 
@@ -321,6 +329,25 @@ def compute_gotcha_score(
 
     grade, label, emoji = _letter_grade(raw_score)
 
+    # ── Dual score: recompute excluding DISPUTED claims ──────────────
+    non_disputed = [c for c in claims if c.status != ClaimStatus.DISPUTED]
+    disputed_count = total - len(non_disputed)
+    disputed_ratio = disputed_count / total if total else 0.0
+
+    if non_disputed:
+        excl_penalty = 0.0
+        for claim in non_disputed:
+            base_p = penalties.get(claim.status, 0)
+            if calibrate_confidence and claim.status != ClaimStatus.VERIFIED:
+                conf = max(0.0, min(1.0, claim.confidence))
+                excl_penalty += base_p * conf
+            else:
+                excl_penalty += float(base_p)
+        worst_excl = len(non_disputed) * max_penalty
+        score_excl = max(0, round(100 * (1 - excl_penalty / worst_excl)))
+    else:
+        score_excl = raw_score  # all claims are DISPUTED — same score
+
     gs = GotchaScore(
         score=raw_score,
         grade=grade,
@@ -330,6 +357,9 @@ def compute_gotcha_score(
         failure_taxonomy=taxonomy_counts,
         total_claims=total,
         catches=catches,
+        score_excl_disputed=score_excl,
+        disputed_ratio=disputed_ratio,
+        auditor_reliability_warning=report.auditor_reliability_warning,
     )
     gs.share_text = _build_share_text(gs, report.prompt)
     return gs
@@ -355,14 +385,20 @@ def _build_share_text(gs: GotchaScore, prompt: str) -> str:
 class SavingsReport:
     """
     Token and cost savings analysis for a completed run.
+
+    cost_2model_usd — what was actually paid (proposer + auditor, resolver skipped
+                      by early-exit OR 2-model chain where resolver = proposer).
+    cost_3model_usd — what a full 3-distinct-model run would have cost.
     """
     tokens_used: int       = 0
     tokens_saved: int      = 0
     total_would_have_been: int = 0
     percent_saved: float   = 0.0
     early_exit: bool       = False
-    cost_usd: float        = 0.0
+    cost_usd: float        = 0.0       # alias for cost_2model_usd (backward compat)
     saved_usd: float       = 0.0
+    cost_2model_usd: float = 0.0       # proposer + auditor only
+    cost_3model_usd: float = 0.0       # full 3-model run estimate
 
     def to_dict(self) -> dict:
         return {
@@ -371,23 +407,29 @@ class SavingsReport:
             "total_would_have_been": self.total_would_have_been,
             "percent_saved": round(self.percent_saved, 1),
             "early_exit": self.early_exit,
-            "cost_usd": round(self.cost_usd, 4),
-            "saved_usd": round(self.saved_usd, 4),
+            "cost_usd": round(self.cost_usd, 6),
+            "saved_usd": round(self.saved_usd, 6),
+            "cost_2model_usd": round(self.cost_2model_usd, 6),
+            "cost_3model_usd": round(self.cost_3model_usd, 6),
         }
 
     def __str__(self) -> str:
         lines = [
             "💰 Savings Report",
-            f"   Tokens used    : {self.tokens_used:,}",
+            f"   Tokens used     : {self.tokens_used:,}",
         ]
         if self.early_exit:
             lines += [
-                f"   Tokens saved   : {self.tokens_saved:,}  (Early Exit — Resolver skipped)",
-                f"   Savings        : {self.percent_saved:.0f}%",
-                f"   Est. cost      : ${self.cost_usd:.4f}  (saved ${self.saved_usd:.4f})",
+                f"   Tokens saved    : {self.tokens_saved:,}  (Early Exit — Resolver skipped)",
+                f"   Savings         : {self.percent_saved:.0f}%",
+                f"   Cost (2-model)  : ${self.cost_2model_usd:.4f}",
+                f"   Cost (3-model)  : ${self.cost_3model_usd:.4f}  (saved ${self.saved_usd:.4f})",
             ]
         else:
-            lines.append(f"   Est. cost      : ${self.cost_usd:.4f}")
+            lines += [
+                f"   Cost (2-model)  : ${self.cost_2model_usd:.4f}",
+                f"   Cost (3-model)  : ${self.cost_3model_usd:.4f}",
+            ]
         return "\n".join(lines)
 
 
@@ -398,23 +440,44 @@ def compute_savings(
     """
     Compute token and cost savings for a VerificationReport.
 
+    cost_2model_usd — cost of what was actually executed (proposer + auditor;
+                      resolver skipped by early exit, or resolver = proposer in
+                      a 2-model chain).
+    cost_3model_usd — hypothetical cost if a full, distinct 3-model run had
+                      been made. Uses the resolver slot's own per-token rate
+                      for the saved portion, which is correct even when the
+                      resolver is the same model as the proposer (same rate).
+
     Parameters
     ----------
     chain : list[str], optional
         The model chain used; enables per-provider cost estimation.
         Falls back to report.chain_models when not provided.
     """
-    model_chain = chain or report.chain_models or None
+    model_chain    = chain or report.chain_models or []
+    resolver_model = model_chain[2] if len(model_chain) >= 3 else (model_chain[0] if model_chain else "")
+    resolver_rate  = _rate_for_model(resolver_model) if resolver_model else _DEFAULT_RATE
+
     used   = report.total_tokens
     saved  = report.saved_tokens if report.early_exit else 0
     total  = used + saved
     pct    = (saved / total * 100) if total > 0 else 0.0
+
+    cost_2model = _estimate_cost_usd(used, model_chain or None)
+    # Extra cost of the resolver pass uses resolver's own rate, not the blended rate.
+    # This is the key correctness fix: when resolver == proposer the rate is the same;
+    # when resolver is Claude/Mistral/etc. it uses that model's rate.
+    saved_cost  = saved * resolver_rate / 1000
+    cost_3model = cost_2model + saved_cost
+
     return SavingsReport(
         tokens_used=used,
         tokens_saved=saved,
         total_would_have_been=total,
         percent_saved=pct,
         early_exit=report.early_exit,
-        cost_usd=_estimate_cost_usd(used, model_chain),
-        saved_usd=_estimate_cost_usd(saved, model_chain),
+        cost_usd=cost_2model,
+        saved_usd=saved_cost,
+        cost_2model_usd=cost_2model,
+        cost_3model_usd=cost_3model,
     )

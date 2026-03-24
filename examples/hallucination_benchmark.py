@@ -1,13 +1,16 @@
 """
 hallucination_benchmark.py — Run ConsensusFlow against 50 known-hallucination queries.
 
-This is the benchmark used to generate the 95% catch rate figure on the website.
-All 50 queries are defined inline; each has a known correct answer fragment and
-a note describing the common hallucination trap.
+Works out-of-the-box with only OPENAI_API_KEY + GEMINI_API_KEY.
+Any third model (Claude, Mistral, Cohere, local Ollama…) can be
+plugged in via --chain.
 
 Usage:
     python examples/hallucination_benchmark.py
     python examples/hallucination_benchmark.py --output results.json
+    python examples/hallucination_benchmark.py --chain gpt-4o gemini/gemini-2.5-flash claude-3-5-sonnet-20241022
+    python examples/hallucination_benchmark.py --concurrency 5
+    python examples/hallucination_benchmark.py --dry-run
 """
 
 from __future__ import annotations
@@ -24,134 +27,144 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
-# ── AISTANBUL-50 dataset ──────────────────────────────────────
+# ── CF-BENCH-50 dataset ───────────────────────────────────────
+# General-domain hallucination benchmark — no travel, no single city.
 # Each entry: (query, known_correct_answer_fragment, hallucination_trap)
-# expected_fragment is matched case-insensitively as a regex pattern so
-# "6|six" catches either "6 minarets" or "six minarets".
-AISTANBUL_50 = [
-    # ── Opening hours (1–7) ───────────────────────────────────
-    ("What time does the Blue Mosque open?",
-     r"9(:00)?\s*(am|AM)?", "hallucination: some models say 8am or 10am"),
-    ("Is the Blue Mosque free to enter?",
-     r"free", "hallucination: models often invent admission fees"),
-    ("What are Topkapi Palace opening hours in 2026?",
-     r"9(:00)?", "hallucination: hours changed in Jan 2026"),
-    ("Is the Grand Bazaar open on Sundays?",
-     r"closed", "hallucination: it is closed on Sundays"),
-    ("What day is Topkapi Palace closed?",
-     r"tuesday", "hallucination: models say Monday"),
-    ("Does the Hagia Sophia charge an entrance fee?",
-     r"free", "hallucination: models often invent ticket prices since 2020"),
-    ("Is the Galata Tower open every day of the week?",
-     r"yes|every day|daily", "basic check — open daily"),
+# expected_fragment is matched case-insensitively as a regex.
+BENCHMARK_50 = [
+    # ── World Geography (1–8) ─────────────────────────────────
+    ("What is the capital of Australia?",
+     r"canberra", "hallucination: models say Sydney or Melbourne"),
+    ("What is the capital of Canada?",
+     r"ottawa", "hallucination: models say Toronto"),
+    ("What is the capital of Brazil?",
+     r"bras[ií]lia", "hallucination: models say São Paulo or Rio"),
+    ("Which country has the largest land area in the world?",
+     r"russia", "basic fact"),
+    ("What is the smallest country in the world by area?",
+     r"vatican", "basic fact"),
+    ("What ocean lies to the east of the United States?",
+     r"atlantic", "basic geography"),
+    ("What continent is Egypt in?",
+     r"africa", "hallucination: models sometimes say Middle East as a continent"),
+    ("Which two countries share the longest land border in the world?",
+     r"canada|united states|us|usa", "hallucination: models say Russia/China"),
 
-    # ── Admission prices (8–12) ───────────────────────────────
-    ("How much does Hagia Sophia cost to enter?",
-     r"free", "hallucination: models often invent ticket prices"),
-    ("What is the Topkapi Palace admission fee in 2026?",
-     r"800|750|700", "hallucination: old price was different"),
-    ("Is the Dolmabahce Palace free?",
-     r"not free|paid|fee|charge", "hallucination: models sometimes say free"),
-    ("How much does it cost to visit the Istanbul Archaeology Museum?",
-     r"\d+", "any numeric price is plausible — checking model doesn't say 'free'"),
-    ("Is entry to the Basilica Cistern free?",
-     r"not free|paid|fee|charge|\d+", "hallucination: models sometimes say free"),
+    # ── Science & Physics (9–16) ──────────────────────────────
+    ("What is the chemical symbol for gold?",
+     r"\bau\b", "basic chemistry"),
+    ("How many planets are in our solar system?",
+     r"8|eight", "hallucination: models say 9 including Pluto"),
+    ("What is the most abundant gas in Earth's atmosphere?",
+     r"nitrogen", "hallucination: models say oxygen"),
+    ("What is the boiling point of water at sea level in Celsius?",
+     r"100", "basic physics"),
+    ("How many bones are in the adult human body?",
+     r"206", "hallucination: models say 207 or 208"),
+    ("What gas do plants absorb during photosynthesis?",
+     r"co2|carbon dioxide", "basic biology"),
+    ("What is the atomic number of carbon?",
+     r"\b6\b", "hallucination: models say 12 (confusing with atomic mass)"),
+    ("Who proposed the theory of general relativity?",
+     r"einstein", "basic fact"),
 
-    # ── Geography & locations (13–20) ─────────────────────────
-    ("Which district is Istiklal Street in?",
-     r"bey[oö]g?lu", "hallucination: models say Sultanahmet"),
-    ("What side of Istanbul is the Grand Bazaar on?",
-     r"european", "hallucination: models sometimes say Asian"),
-    ("How far is Kadıköy from Sultanahmet by ferry?",
-     r"20|25|30", "hallucination: wrong transit times"),
-    ("Is Galata Tower in the European or Asian side?",
-     r"european", "basic geography check"),
-    ("In which neighbourhood is the Spice Bazaar located?",
-     r"emin[oö]n[uü]|fatih", "hallucination: models say Sultanahmet"),
-    ("Which continent is Kadıköy on?",
-     r"asian|asia", "basic geography — Kadıköy is on the Asian side"),
-    ("Is Ortaköy on the European or Asian side of Istanbul?",
-     r"european", "hallucination: some models say Asian"),
-    ("What body of water separates the European and Asian sides of Istanbul?",
-     r"bosphorus|bo[gğ]az", "basic geography check"),
+    # ── Technology & Computing (17–24) ────────────────────────
+    ("Who invented the World Wide Web?",
+     r"berners.lee|tim berners", "hallucination: models say Al Gore or Vint Cerf"),
+    ("In what year was the first iPhone released?",
+     r"2007", "hallucination: models say 2006 or 2008"),
+    ("In what year was Python first released?",
+     r"1991", "hallucination: models say 1995"),
+    ("Who founded Microsoft?",
+     r"gates|allen|bill gates|paul allen", "hallucination: models omit Allen"),
+    ("What does HTTP stand for?",
+     r"hypertext transfer protocol", "basic acronym"),
+    ("What does CPU stand for?",
+     r"central processing unit", "basic acronym"),
+    ("Who founded Apple Computer?",
+     r"jobs|wozniak", "hallucination: models omit Wozniak or Jobs"),
+    ("What programming language is most widely used for data science?",
+     r"python", "basic fact"),
 
-    # ── Historical facts (21–28) ──────────────────────────────
-    ("When was the Blue Mosque built?",
-     r"1616", "hallucination: models say 1609 or 1600"),
-    ("Who commissioned the Blue Mosque?",
-     r"ahmed\s*(i|1st|first)", "hallucination: models say Suleiman"),
-    ("What was Hagia Sophia originally?",
-     r"church|cathedral|christian", "should say Byzantine church"),
-    ("In what year did Hagia Sophia become a mosque again?",
-     r"2020", "hallucination: models say 2019 or 2021"),
-    ("When was Constantinople renamed Istanbul?",
-     r"1453|1930", "1453 conquest + 1930 official postal rename"),
-    ("Who built the Topkapi Palace?",
-     r"mehmed|fatih|ottoman", "hallucination: models sometimes say Suleiman"),
-    ("What century was the Grand Bazaar established?",
-     r"15th|1400s|1461|1455", "hallucination: models say 16th century"),
-    ("How many minarets does the Blue Mosque have?",
-     r"6|six", "hallucination: models say four"),
+    # ── History (25–33) ───────────────────────────────────────
+    ("In what year did World War II end?",
+     r"1945", "basic history"),
+    ("Who was the first person to walk on the Moon?",
+     r"armstrong|neil armstrong", "hallucination: models sometimes say Buzz Aldrin"),
+    ("In what year did the Berlin Wall fall?",
+     r"1989", "basic history"),
+    ("Who wrote the United States Declaration of Independence?",
+     r"jefferson|thomas jefferson", "hallucination: models say Franklin or Adams"),
+    ("In what year did the French Revolution begin?",
+     r"1789", "basic history"),
+    ("In what year did the Soviet Union officially dissolve?",
+     r"1991", "hallucination: models say 1989 or 1990"),
+    ("Who was the first President of the United States?",
+     r"washington|george washington", "basic history"),
+    ("In what year did man first land on the Moon?",
+     r"1969", "hallucination: models say 1968 or 1970"),
+    ("What was the name of the passenger ship that sank in April 1912?",
+     r"titanic", "basic history"),
 
-    # ── Transport (29–34) ─────────────────────────────────────
-    ("How do you get from Istanbul Airport to Taksim?",
-     r"metro|m11|havaist", "hallucination: old answer was shuttle only"),
-    ("Does the Istanbul metro run 24 hours?",
-     r"no|not 24", "hallucination: models say yes"),
-    ("What is the Istanbulkart?",
-     r"transit card|transport card|card", "basic check"),
-    ("How long does the ferry from Eminönü to Kadıköy take?",
-     r"20|25|30", "approximate time check"),
-    ("Is there a direct metro line from Sabiha Gökçen Airport to the city centre?",
-     r"no|not yet|bus|shuttle", "no direct metro as of 2026"),
-    ("What is the name of the main transit card used in Istanbul?",
-     r"istanbulkart", "basic fact check"),
+    # ── Literature & Art (34–40) ──────────────────────────────
+    ("Who wrote the novel 1984?",
+     r"orwell|george orwell", "basic literature"),
+    ("Who wrote Romeo and Juliet?",
+     r"shakespeare", "basic literature"),
+    ("Who wrote Don Quixote?",
+     r"cervantes", "basic literature"),
+    ("Who painted the Mona Lisa?",
+     r"da vinci|leonardo", "basic art history"),
+    ("Who wrote the Harry Potter series?",
+     r"rowling|j\.k\.", "basic literature"),
+    ("What language has the most native speakers in the world?",
+     r"mandarin|chinese", "hallucination: models say English or Spanish"),
+    ("What is the most translated book in history?",
+     r"bible", "basic fact"),
 
-    # ── Culture & etiquette (35–39) ───────────────────────────
-    ("Should women cover their heads in the Blue Mosque?",
-     r"yes|head cover|scarf", "hallucination: models say optional"),
-    ("Can you eat during Ramadan in Istanbul restaurants?",
-     r"yes|restaurants open", "hallucination: models say no"),
-    ("Is alcohol legal in Istanbul?",
-     r"yes|legal|available", "hallucination: models say no"),
-    ("Do you need to remove shoes before entering a mosque in Istanbul?",
-     r"yes|remove|take off", "basic etiquette check"),
-    ("Is tipping customary in Istanbul restaurants?",
-     r"yes|customary|expected|tip", "basic etiquette check"),
+    # ── Medicine & Biology (41–45) ────────────────────────────
+    ("What is the powerhouse of the cell?",
+     r"mitochondria", "classic biology fact"),
+    ("How many chromosomes do humans have?",
+     r"46|23 pairs", "hallucination: models say 48"),
+    ("What organ produces insulin in the human body?",
+     r"pancreas", "hallucination: models say liver"),
+    ("What is the most common blood type in the world?",
+     r"o\+|o positive|type o", "hallucination: models say A+"),
+    ("What is the average normal human body temperature in Celsius?",
+     r"37", "basic medicine"),
 
-    # ── Food & restaurants (40–43) ────────────────────────────
-    ("What is a typical Istanbul breakfast called?",
-     r"kahvalt[iı]", "hallucination: models invent names"),
-    ("What district is known for fish restaurants in Istanbul?",
-     r"kumkap[iı]|tarabya|beyko[zg]", "hallucination: models say Galata"),
-    ("What is 'simit' in Istanbul?",
-     r"bread|sesame|ring|bagel", "basic food check"),
-    ("What is the traditional drink served with Turkish breakfast?",
-     r"tea|[çc]ay", "hallucination: some models say coffee first"),
-
-    # ── Broad facts (44–50) ───────────────────────────────────
-    ("What is the population of Istanbul in 2026?",
-     r"1[5-9]|15 million|16 million", "approximate range check"),
-    ("What empire built the Hagia Sophia?",
-     r"byzantine|roman", "hallucination: models say Ottoman"),
-    ("Is the Bosphorus a river or a strait?",
-     r"strait", "basic fact"),
-    ("Which two continents does Istanbul span?",
-     r"europe|asia", "should mention both continents"),
-    ("What is the currency used in Istanbul?",
-     r"lira|tl|try", "basic fact"),
-    ("What language is primarily spoken in Istanbul?",
-     r"turkish", "basic fact"),
-    ("In what country is Istanbul located?",
-     r"turkey|türkiye", "basic fact — some models confuse with Greece"),
+    # ── Economics & Business (46–50) ──────────────────────────
+    ("What does GDP stand for?",
+     r"gross domestic product", "basic acronym"),
+    ("Who wrote 'The Wealth of Nations'?",
+     r"adam smith", "hallucination: models say Ricardo or Keynes"),
+    ("What is the currency of Japan?",
+     r"yen", "basic fact"),
+    ("What does IPO stand for in finance?",
+     r"initial public offering", "basic finance acronym"),
+    ("Which stock exchange is the largest in the world by market capitalisation?",
+     r"new york|nyse|nasdaq", "hallucination: models sometimes say Tokyo or London"),
 ]
 
-assert len(AISTANBUL_50) == 50, f"Dataset must have 50 entries, got {len(AISTANBUL_50)}"
+assert len(BENCHMARK_50) == 50, f"Dataset must have 50 entries, got {len(BENCHMARK_50)}"
+
+# Category boundaries for the breakdown report
+CATEGORIES = [
+    ("World Geography",       1,   8),
+    ("Science & Physics",     9,  16),
+    ("Technology & Computing",17,  24),
+    ("History",               25,  33),
+    ("Literature & Art",      34,  40),
+    ("Medicine & Biology",    41,  45),
+    ("Economics & Business",  46,  50),
+]
 
 
 async def verify_single(query: str, expected_pattern: str, chain: list[str]) -> dict:
     """Run one query through ConsensusFlow and check if expected pattern matches."""
     from consensusflow import verify
+    from consensusflow.core.scoring import compute_savings
 
     try:
         t0 = time.monotonic()
@@ -160,6 +173,8 @@ async def verify_single(query: str, expected_pattern: str, chain: list[str]) -> 
 
         final = report.final_answer.lower()
         passed = bool(re.search(expected_pattern.lower(), final))
+
+        savings = compute_savings(report)
 
         return {
             "query": query,
@@ -170,7 +185,12 @@ async def verify_single(query: str, expected_pattern: str, chain: list[str]) -> 
             "total_tokens": report.total_tokens,
             "latency_s": round(elapsed, 2),
             "corrected_claims": report.corrected_count,
+            "disputed_claims": report.disputed_count,
+            "auditor_warning": bool(report.auditor_reliability_warning),
             "status": report.status.value,
+            "cost_2model_usd": savings.cost_2model_usd,
+            "cost_3model_usd": savings.cost_3model_usd,
+            "saved_usd": savings.saved_usd,
         }
     except Exception as exc:
         return {
@@ -178,44 +198,116 @@ async def verify_single(query: str, expected_pattern: str, chain: list[str]) -> 
             "expected_pattern": expected_pattern,
             "passed": False,
             "error": str(exc),
+            "cost_2model_usd": 0.0,
+            "cost_3model_usd": 0.0,
+            "saved_usd": 0.0,
         }
 
 
-async def run_benchmark(chain: list[str], output: str | None) -> None:
-    dataset = AISTANBUL_50
+async def run_benchmark(
+    chain: list[str],
+    output: str | None,
+    concurrency: int = 3,
+    dry_run: bool = False,
+) -> None:
+    dataset = BENCHMARK_50
     print(f"\n🧪 ConsensusFlow Benchmark — {len(dataset)} queries")
     print(f"🔗 Chain: {' → '.join(chain)}")
-    print("=" * 60)
+    print(f"⚡ Concurrency: {concurrency}")
+    if dry_run:
+        print("🔍 DRY RUN — no API calls will be made")
+    print("=" * 70)
 
-    results = []
-    passed = 0
+    if dry_run:
+        for i, (query, pattern, trap) in enumerate(dataset, 1):
+            print(f"[{i:3}] {query[:60]}  ← {trap}")
+        print(f"\nTotal: {len(dataset)} queries ready to run.")
+        return
 
-    for i, (query, expected, *_) in enumerate(dataset, 1):
-        print(f"[{i:2}/{len(dataset)}] {query[:55]:<55}", end="", flush=True)
-        result = await verify_single(query, expected, chain)
-        status = "✅" if result["passed"] else "❌"
-        print(f" {status}  {result.get('latency_s', '?')}s")
-        results.append(result)
-        if result["passed"]:
-            passed += 1
+    results: list[dict] = [{}] * len(dataset)
+    passed_total = 0
+    semaphore = asyncio.Semaphore(concurrency)
 
+    async def bounded_verify(idx: int, query: str, pattern: str) -> None:
+        async with semaphore:
+            result = await verify_single(query, pattern, chain)
+            results[idx] = result
+            status = "✅" if result["passed"] else ("⚠️ " if result.get("auditor_warning") else "❌")
+            err = f"  ERR: {result['error'][:60]}" if "error" in result else ""
+            print(
+                f"[{idx+1:3}/{len(dataset)}] {query[:52]:<52} {status}"
+                f"  {result.get('latency_s', '?')}s{err}"
+            )
+
+    tasks = [
+        bounded_verify(i, query, pattern)
+        for i, (query, pattern, *_) in enumerate(dataset)
+    ]
+    await asyncio.gather(*tasks)
+
+    # ── Summary ──────────────────────────────────────────────
     total = len(results)
-    accuracy = passed / total * 100
-
-    print("\n" + "=" * 60)
-    print(f"📊 Results: {passed}/{total} passed  ({accuracy:.1f}% accuracy)")
-    print(f"⚡ Early exits: {sum(1 for r in results if r.get('early_exit'))}")
+    passed_total = sum(1 for r in results if r.get("passed"))
+    accuracy = passed_total / total * 100
+    early_exits = sum(1 for r in results if r.get("early_exit"))
     avg_tokens = sum(r.get("total_tokens", 0) for r in results) / total
-    print(f"🪙 Avg tokens/query: {avg_tokens:.0f}")
+    avg_latency = sum(r.get("latency_s", 0) for r in results) / total
     errors = [r for r in results if "error" in r]
+    warnings = sum(1 for r in results if r.get("auditor_warning"))
+
+    total_cost_2model = sum(r.get("cost_2model_usd", 0.0) for r in results)
+    total_cost_3model = sum(r.get("cost_3model_usd", 0.0) for r in results)
+    avg_cost_2model   = total_cost_2model / total
+    avg_cost_3model   = total_cost_3model / total
+
+    print("\n" + "=" * 70)
+    print(f"📊 OVERALL: {passed_total}/{total} passed  ({accuracy:.1f}% accuracy)")
+    print(f"⚡ Early exits: {early_exits} ({early_exits/total*100:.0f}%)")
+    print(f"🪙 Avg tokens/query: {avg_tokens:.0f}")
+    print(f"⏱  Avg latency/query: {avg_latency:.1f}s")
+    print(f"💰 Cost per query  — 2-model (lightweight): ${avg_cost_2model:.4f}"
+          f"   |   3-model (full): ${avg_cost_3model:.4f}")
+    print(f"💰 Total run cost  — 2-model: ${total_cost_2model:.4f}"
+          f"   |   3-model: ${total_cost_3model:.4f}")
+    if warnings:
+        print(f"⚠️  Auditor drift warnings: {warnings}")
     if errors:
         print(f"❌ Errors: {len(errors)}")
+        for e in errors[:5]:
+            print(f"   • {e['query'][:55]}: {e.get('error','?')[:80]}")
+
+    # ── Per-category breakdown ────────────────────────────────
+    print("\n📂 Per-category breakdown:")
+    print(f"  {'Category':<28} {'Pass':>5}  {'Total':>5}  {'%':>6}")
+    print("  " + "-" * 48)
+    for cat_name, start, end in CATEGORIES:
+        cat_results = results[start - 1 : end]
+        cat_pass = sum(1 for r in cat_results if r.get("passed"))
+        cat_total = len(cat_results)
+        pct = cat_pass / cat_total * 100 if cat_total else 0
+        bar = "🟢" if pct >= 80 else ("🟡" if pct >= 60 else "🔴")
+        print(f"  {bar} {cat_name:<26} {cat_pass:>5}  {cat_total:>5}  {pct:>5.0f}%")
 
     if output:
         with open(output, "w", encoding="utf-8") as fh:
             json.dump(
-                {"accuracy": accuracy, "passed": passed, "total": total, "results": results},
-                fh, indent=2,
+                {
+                    "accuracy": accuracy,
+                    "passed": passed_total,
+                    "total": total,
+                    "chain": chain,
+                    "early_exits": early_exits,
+                    "avg_tokens": avg_tokens,
+                    "avg_latency_s": avg_latency,
+                    "auditor_warnings": warnings,
+                    "cost_2model_usd_total": round(total_cost_2model, 6),
+                    "cost_3model_usd_total": round(total_cost_3model, 6),
+                    "avg_cost_2model_usd":   round(avg_cost_2model, 6),
+                    "avg_cost_3model_usd":   round(avg_cost_3model, 6),
+                    "results": results,
+                },
+                fh,
+                indent=2,
             )
         print(f"\n✅ Full results saved to: {output}")
 
@@ -225,16 +317,36 @@ def main() -> None:
     parser.add_argument("--output", metavar="FILE", help="Save results as JSON")
     parser.add_argument(
         "--chain",
-        nargs=3,
-        metavar=("PROPOSER", "AUDITOR", "RESOLVER"),
+        nargs="+",
+        metavar="MODEL",
         default=[
-            "gpt-4o",
-            "gemini/gemini-2.5-flash",
-            "claude-3-7-sonnet-20250219",
+            "gpt-4o",                   # Proposer  — OpenAI
+            "gemini/gemini-2.5-flash",  # Auditor   — Google
+            # Resolver defaults to proposer when only 2 models are given
         ],
+        help=(
+            "2 or 3 LiteLLM model strings: proposer auditor [resolver]. "
+            "When only 2 are given the resolver automatically reuses the proposer. "
+            "Examples: --chain gpt-4o gemini/gemini-2.5-flash "
+            "          --chain gpt-4o gemini/gemini-2.5-flash claude-3-5-sonnet-20241022"
+        ),
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=3,
+        metavar="N",
+        help="Number of queries to run in parallel (default: 3)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print all queries without making API calls",
     )
     args = parser.parse_args()
-    asyncio.run(run_benchmark(args.chain, args.output))
+    if len(args.chain) not in (2, 3):
+        parser.error("--chain requires exactly 2 or 3 model strings")
+    asyncio.run(run_benchmark(args.chain, args.output, args.concurrency, args.dry_run))
 
 
 if __name__ == "__main__":

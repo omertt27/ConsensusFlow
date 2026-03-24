@@ -16,7 +16,7 @@ so imports never crash and no validation runs.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from consensusflow.core.protocol import ChainStatus, ClaimStatus
 
@@ -41,9 +41,9 @@ from consensusflow.core._pydantic_compat import (
 class AtomicClaimSchema(BaseModel):
     """Validated atomic claim as returned by the extractor model."""
 
-    id: Optional[str] = Field(None, description="Short UUID for cross-referencing")
+    id: Optional[str] = Field(default=None, description="Short UUID for cross-referencing")
     text: str = Field(..., min_length=3, description="The verifiable statement")
-    status: ClaimStatus = ClaimStatus.VERIFIED
+    status: Union[ClaimStatus, str] = ClaimStatus.VERIFIED
     original_text: Optional[str] = None
     note: Optional[str] = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)

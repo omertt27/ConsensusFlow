@@ -128,7 +128,7 @@ class TestCompleteNoLiteLLM:
 # ─────────────────────────────────────────────
 
 class TestCompleteWithMockedLiteLLM:
-    def _make_response(self, text: str, prompt_tokens=10, completion_tokens=5):
+    def _make_response(self, text: str | None, prompt_tokens=10, completion_tokens=5):
         resp = MagicMock()
         resp.choices = [MagicMock()]
         resp.choices[0].message.content = text

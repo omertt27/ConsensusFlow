@@ -75,7 +75,7 @@ RESOLVER = {
 
 def _make_chain(**kwargs) -> SequentialChain:
     return SequentialChain(
-        chain=["gpt-4o", "gemini/gemini-2.0-flash", "claude-3-7-sonnet"],
+        chain=["gpt-4o", "gemini/gemini-2.5-flash", "claude-3-7-sonnet"],
         extractor_model="gpt-4o-mini",
         similarity_threshold=0.92,
         **kwargs,

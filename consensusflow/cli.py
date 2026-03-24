@@ -3,7 +3,7 @@ cli.py — ConsensusFlow command-line interface.
 
 Usage:
     consensusflow "Your question here"
-    consensusflow "Plan a trip to Istanbul" --chain gpt-4o gemini/gemini-2.0-flash claude-3-5-sonnet-20241022
+    consensusflow "Plan a trip to Istanbul" --chain gpt-4o gemini/gemini-2.5-flash claude-3-5-sonnet-20241022
     consensusflow "..." --output markdown > report.md
     consensusflow "..." --output json
     consensusflow "..." --stream
@@ -26,10 +26,10 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   consensusflow "Is the Blue Mosque free to enter in 2026?"
-  consensusflow "What time does Topkapi Palace open?" --chain gpt-4o gemini/gemini-2.0-flash claude-3-5-sonnet-20241022
+  consensusflow "What time does Topkapi Palace open?" --chain gpt-4o gemini/gemini-2.5-flash claude-3-5-sonnet-20241022
   consensusflow "Plan a 2-day Istanbul trip" --output markdown > report.md
   consensusflow "..." --stream --output terminal
-  consensusflow "..." --budget 0.05 --fallback gpt-4-turbo gemini/gemini-2.0-flash claude-3-haiku-20240307
+  consensusflow "..." --budget 0.05 --fallback gpt-4-turbo gemini/gemini-2.5-flash claude-3-haiku-20240307
         """,
     )
     parser.add_argument(

@@ -135,7 +135,8 @@ _PROVIDER_RATES: list[tuple[str, float]] = [
     ("claude-3-haiku",      0.0013),
     ("claude",              0.009),   # generic claude fallback
     # Google
-    ("gemini-2.0-flash",    0.0004),
+    ("gemini-2.5-flash",    0.0004),
+    ("gemini-2.0-flash",    0.0004),  # kept for backward compatibility
     ("gemini-1.5-flash",    0.0004),
     ("gemini-1.5-pro",      0.0035),
     ("gemini",              0.002),   # generic gemini fallback

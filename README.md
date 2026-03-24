@@ -98,7 +98,7 @@ report = asyncio.run(verify(
     "Plan a 2-day trip to Istanbul",
     chain=[
         "gpt-4o",                        # Proposer
-        "gemini/gemini-2.0-flash",       # Auditor
+        "gemini/gemini-2.5-flash",       # Auditor
         "claude-3-7-sonnet-20250219",    # Resolver
     ]
 ))
@@ -112,7 +112,7 @@ consensusflow "What time does Topkapi Palace open?"
 
 # With custom chain + save report
 consensusflow "Istanbul itinerary" \
-  --chain gpt-4o gemini/gemini-2.0-flash claude-3-7-sonnet-20250219 \
+  --chain gpt-4o gemini/gemini-2.5-flash claude-3-7-sonnet-20250219 \
   --output markdown \
   --save report.md
 
@@ -221,7 +221,7 @@ ConsensusFlow uses [LiteLLM](https://litellm.ai) — any of its 100+ providers w
 # Mix and match freely
 chain = [
     "gpt-4o",                        # OpenAI
-    "gemini/gemini-2.0-flash",       # Google
+    "gemini/gemini-2.5-flash",       # Google
     "claude-3-7-sonnet-20250219",    # Anthropic
 ]
 

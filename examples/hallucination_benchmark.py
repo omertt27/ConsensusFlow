@@ -229,7 +229,7 @@ def main() -> None:
         metavar=("PROPOSER", "AUDITOR", "RESOLVER"),
         default=[
             "gpt-4o",
-            "gemini/gemini-2.0-flash",
+            "gemini/gemini-2.5-flash",
             "claude-3-7-sonnet-20250219",
         ],
     )

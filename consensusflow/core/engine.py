@@ -229,7 +229,7 @@ class SequentialChain:
     Usage::
 
         chain = SequentialChain(
-            chain=["gpt-4o", "gemini/gemini-2.0-flash", "claude-3-5-sonnet-20241022"],
+            chain=["gpt-4o", "gemini/gemini-2.5-flash", "claude-3-5-sonnet-20241022"],
             extractor_model="gpt-4o-mini",
             similarity_threshold=0.92,
             enable_cache=True,
@@ -269,7 +269,7 @@ class SequentialChain:
 
     DEFAULT_CHAIN = [
         "gpt-4o",
-        "gemini/gemini-2.0-flash",
+        "gemini/gemini-2.5-flash",
         "claude-3-5-sonnet-20241022",
     ]
 

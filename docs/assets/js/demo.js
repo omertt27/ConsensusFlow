@@ -7,7 +7,7 @@
   "use strict";
 
   const DEMO_PROMPT =
-    'verify("Plan 2 days in Istanbul", chain=["gpt-4o", "gemini/gemini-2.0-flash", "claude-3-7-sonnet"])';
+    'verify("Plan 2 days in Istanbul", chain=["gpt-4o", "gemini/gemini-2.5-flash", "claude-3-7-sonnet"])';
 
   const SCRIPT = [
     { delay: 0,     cls: "t-prompt",  text: "$ " },
@@ -26,7 +26,7 @@
     { delay: 3200,  cls: "t-warn",    text: "9 atomic claims" },
     { delay: 3200,  cls: "t-output",  text: " for audit\n" },
     { delay: 3500,  cls: "t-output",  text: "\n" },
-    { delay: 3600,  cls: "",          text: '<span class="step-pill step-pill--auditor">Step 2b — Auditor  gemini/gemini-2.0-flash</span>\n', raw: true },
+    { delay: 3600,  cls: "",          text: '<span class="step-pill step-pill--auditor">Step 2b — Auditor  gemini/gemini-2.5-flash</span>\n', raw: true },
     { delay: 3700,  cls: "t-output",  text: "Adversarial review…  " },
     { delay: 3900,  cls: "",          text: '<span class="spin">⟳</span>\n', raw: true },
     { delay: 5800,  cls: "t-warn",    text: "⚠ Claim [3] CORRECTED: " },

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { clsx } from 'clsx'
 import {
   CheckCircle2, AlertTriangle, XCircle, Zap, Clock,
@@ -332,13 +332,13 @@ export default function App() {
           </a>
           <div className="pipeline-header">
             {PIPELINE_STEPS.map((step, i) => (
-              <>
-                <div key={step.key} className={clsx('pipeline-step', activePipelineStep === i && 'active')}>
+              <React.Fragment key={step.key}>
+                <div className={clsx('pipeline-step', activePipelineStep === i && 'active')}>
                   <step.icon size={14} />
                   <span>{step.label}</span>
                 </div>
                 {i < PIPELINE_STEPS.length - 1 && <ChevronRight size={16} className="pipeline-separator" />}
-              </>
+              </React.Fragment>
             ))}
           </div>
         </header>

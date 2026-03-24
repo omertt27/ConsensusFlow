@@ -32,7 +32,7 @@ def _make_report(
 ) -> VerificationReport:
     r = VerificationReport(
         prompt="Tell me about Istanbul.",
-        chain_models=["gpt-4o", "gemini/gemini-2.0-flash", "claude-3-5-sonnet"],
+        chain_models=["gpt-4o", "gemini/gemini-2.5-flash", "claude-3-5-sonnet"],
         status=status,
         final_answer=final_answer,
         total_tokens=1200,
@@ -48,7 +48,7 @@ def _make_report(
         latency_ms=1200,
     )
     r.auditor_result = StepResult(
-        step="auditor", model="gemini/gemini-2.0-flash",
+        step="auditor", model="gemini/gemini-2.5-flash",
         raw_text="[verified]", prompt_tokens=80, completion_tokens=40,
         latency_ms=1800,
     )

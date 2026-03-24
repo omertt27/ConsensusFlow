@@ -207,7 +207,7 @@ class TestComputeSavings:
 
     def test_cost_usd_positive(self):
         r = self._report(total_tokens=2000)
-        s = compute_savings(r, chain=["gpt-4o", "gemini/gemini-2.0-flash", "claude-3-5-sonnet"])
+        s = compute_savings(r, chain=["gpt-4o", "gemini/gemini-2.5-flash", "claude-3-5-sonnet"])
         assert s.cost_usd > 0
 
     def test_zero_tokens_no_division_error(self):
@@ -225,7 +225,7 @@ class TestRateForModel:
         assert rate > 0
 
     def test_gemini_flash_cheaper_than_gpt4(self):
-        assert _rate_for_model("gemini/gemini-2.0-flash") < _rate_for_model("gpt-4o")
+        assert _rate_for_model("gemini/gemini-2.5-flash") < _rate_for_model("gpt-4o")
 
     def test_claude_opus_expensive(self):
         assert _rate_for_model("claude-3-opus-20240229") > _rate_for_model("claude-3-haiku-20240307")
@@ -242,7 +242,7 @@ class TestEstimateCostUsd:
         assert _estimate_cost_usd(0) == 0.0
 
     def test_with_chain_uses_blended_rate(self):
-        cost_with_chain = _estimate_cost_usd(1000, ["gpt-4o", "gemini/gemini-2.0-flash", "claude-3-5-sonnet"])
+        cost_with_chain = _estimate_cost_usd(1000, ["gpt-4o", "gemini/gemini-2.5-flash", "claude-3-5-sonnet"])
         cost_without = _estimate_cost_usd(1000)
         # Both should be positive, values differ by model mix
         assert cost_with_chain > 0

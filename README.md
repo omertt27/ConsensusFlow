@@ -1,60 +1,62 @@
-# 🔍 ConsensusFlow
+# ConsensusFlow
 
-**The Trust Protocol for Verified AI Outputs.**
+**Multi-model hallucination detection for production AI.**
 
-[![PyPI version](https://img.shields.io/pypi/v/consensusflow?color=blue&label=pip%20install%20consensusflow)](https://pypi.org/project/consensusflow/)
+[![PyPI](https://img.shields.io/pypi/v/consensusflow?color=blue&label=pip%20install%20consensusflow)](https://pypi.org/project/consensusflow/)
 [![Python](https://img.shields.io/pypi/pyversions/consensusflow)](https://pypi.org/project/consensusflow/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Hallucination catch rate](https://img.shields.io/badge/catch%20rate-95%25-brightgreen)](examples/hallucination_benchmark.py)
+[![Benchmark](https://img.shields.io/badge/CF--BENCH--50-100%25-brightgreen)](#benchmarks)
+[![Tests](https://img.shields.io/badge/tests-214%20passing-brightgreen)](#)
 
-ConsensusFlow chains multiple LLMs sequentially — **Proposer → Auditor → Resolver** — to verify every atomic claim and catch hallucinations before they reach your users.
+ConsensusFlow chains multiple LLMs in sequence — **Proposer → Auditor → Resolver** — to verify every atomic claim and catch hallucinations before they reach your users.
 
 ```python
 from consensusflow import verify
 
-report = await verify("What time does the Blue Mosque open?")
-print(report.final_answer)   # ✅ Verified answer
-print(report.corrected_count)  # How many facts were fixed
+report = await verify("Who founded Microsoft?")
+print(report.final_answer)      # Verified answer
+print(report.corrected_count)   # How many facts were fixed
 ```
+
+> **This is a read-only open-source release.**  
+> Issues and pull requests are not monitored. See [License](#license).
 
 ---
 
-## The Trust Wall Problem
+## The problem
 
-Developers building AI products face a fundamental issue: **you cannot trust the output of a single model** without manually checking every fact. GPT-4o hallucinates on ~30% of factual queries. Gemini gets dates wrong. Claude invents opening hours.
+A single LLM cannot verify its own output. GPT-4o hallucinates on factual queries. Gemini gets dates wrong. Claude invents details. Checking everything manually does not scale.
 
-This "Trust Wall" creates:
-- 🚨 **Liability risk** — wrong information shipped to users
-- ⏱️ **Engineering time** — manual spot-checking at scale is impossible
-- 💔 **User trust destruction** — one bad answer invalidates everything
-
-**ConsensusFlow solves this with adversarial multi-model verification.**
+ConsensusFlow solves this with an adversarial multi-model pipeline where each model's job is to find flaws in the previous one.
 
 ---
 
-## How It Works
+## How it works
 
 ```
-User Prompt
-    │
-    ▼
-┌──────────┐     ┌───────────────┐     ┌──────────┐     ┌──────────┐
-│ Proposer │────▶│ Claim         │────▶│ Auditor  │────▶│ Resolver │
-│  gpt-4o  │     │ Extractor     │     │  gemini  │     │  claude  │
-└──────────┘     │  gpt-4o-mini  │     └──────────┘     └──────────┘
-                 └───────────────┘           │                │
-                                             │ corrections    │
-                                             ▼                ▼
-                                       ┌────────────────────────┐
-                                       │  ✅ Verified Answer     │
-                                       │  + Markdown Audit Trail │
-                                       └────────────────────────┘
+Prompt
+  │
+  ▼
+┌───────────┐    ┌──────────────────┐    ┌──────────┐    ┌──────────┐
+│ Proposer  │───▶│ Claim Extractor  │───▶│ Auditor  │───▶│ Resolver │
+│  gpt-4o   │    │   gpt-4o-mini    │    │  gemini  │    │  gpt-4o  │
+└───────────┘    └──────────────────┘    └──────────┘    └──────────┘
+                                               │               │
+                                          corrections    final answer
+                                               └───────────────┘
+                                                       │
+                                               ┌───────────────┐
+                                               │ VerificationReport │
+                                               │ + claim audit trail│
+                                               └───────────────┘
 ```
 
-1. **Proposer** — Your primary model answers the question
-2. **Claim Extractor** — A fast model (gpt-4o-mini) decomposes the answer into atomic verifiable claims
-3. **Auditor** — An adversarial model (Gemini) checks every claim individually with a "Negative Reward" mandate
-4. **Resolver** — A synthesis model (Claude) produces the final, corrected answer
+1. **Proposer** — primary model answers the question
+2. **Claim Extractor** — fast model breaks the answer into individual verifiable claims
+3. **Auditor** — adversarial model checks every claim with a "Negative Reward" mandate: *find flaws or be penalised for low effort*
+4. **Resolver** — synthesis model writes the final corrected answer
+
+The pipeline runs with just **2 models** out of the box (OpenAI + Gemini). The resolver defaults to reusing the proposer, so no Anthropic key is required.
 
 ---
 
@@ -64,148 +66,189 @@ User Prompt
 pip install consensusflow
 ```
 
-Then create a `.env` file:
-
-```bash
-cp .env.example .env
-# Edit .env with your API keys
-```
+Create a `.env` file in your project root:
 
 ```ini
+# Required (minimum — works with 2 models)
 OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
 GEMINI_API_KEY=AIza...
+
+# Optional — unlocks a distinct resolver model
+ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+ConsensusFlow loads `.env` automatically via `python-dotenv`.
 
 ---
 
-## Quick Examples
+## Quick start
 
-### One-liner verification
+### One-liner
 
 ```python
 import asyncio
 from consensusflow import verify
 
-report = asyncio.run(verify("Is the Blue Mosque free to enter?"))
+report = asyncio.run(verify("What is the capital of Australia?"))
 print(report.final_answer)
+# → "The capital of Australia is Canberra."
 ```
 
-### Custom model chain
+### 2-model chain (OpenAI + Gemini only)
 
 ```python
 report = asyncio.run(verify(
-    "Plan a 2-day trip to Istanbul",
+    "Who invented the World Wide Web?",
+    chain=["gpt-4o", "gemini/gemini-2.5-flash"],
+    # resolver automatically reuses gpt-4o
+))
+```
+
+### 3-model chain (add a distinct resolver)
+
+```python
+report = asyncio.run(verify(
+    "How many bones are in the adult human body?",
     chain=[
-        "gpt-4o",                        # Proposer
-        "gemini/gemini-2.5-flash",       # Auditor
-        "claude-3-7-sonnet-20250219",    # Resolver
+        "gpt-4o",                        # Proposer  — OpenAI
+        "gemini/gemini-2.5-flash",       # Auditor   — Google
+        "claude-3-7-sonnet-20250219",    # Resolver  — Anthropic
     ]
 ))
+```
+
+### Inspect the audit trail
+
+```python
+for claim in report.atomic_claims:
+    print(f"[{claim.status.value}] {claim.text}")
+    if claim.note:
+        print(f"  → {claim.note}")
+
+# Example output:
+# [VERIFIED]  The adult human body has 206 bones.
+# [CORRECTED] The number does not change after age 25.
+#   → Earlier draft said "207–213 depending on age" which is incorrect.
 ```
 
 ### CLI
 
 ```bash
 # Basic
-consensusflow "What time does Topkapi Palace open?"
+consensusflow "Who wrote Don Quixote?"
 
-# With custom chain + save report
-consensusflow "Istanbul itinerary" \
-  --chain gpt-4o gemini/gemini-2.5-flash claude-3-7-sonnet-20250219 \
+# Custom chain + save report
+consensusflow "Explain general relativity" \
+  --chain gpt-4o gemini/gemini-2.5-flash \
   --output markdown \
   --save report.md
 
-# Stream output live
-consensusflow "Plan a trip to Istanbul" --stream
+# Streaming
+consensusflow "Summarise the French Revolution" --stream
 ```
 
-### Streaming (async generator)
+### Streaming API
 
 ```python
 from consensusflow import SequentialChain
 
-chain = SequentialChain()
+chain = SequentialChain(chain=["gpt-4o", "gemini/gemini-2.5-flash"])
 
-async for event in chain.stream("Plan a 2-day Istanbul trip"):
+async for event in chain.stream("What year did the Berlin Wall fall?"):
     if event["event"] == "proposer_chunk":
-        print(event["data"], end="", flush=True)  # Stream Proposer live
+        print(event["data"], end="", flush=True)
     elif event["event"] == "early_exit":
-        print("⚡ 100% consensus — resolver skipped!")
+        print("\n⚡ 100% consensus — resolver skipped!")
     elif event["event"] == "done":
-        print(f"\n✅ {event['data']['status']}")
-```
-
-### Audit Trail
-
-```python
-from consensusflow import verify, render_markdown
-
-report = asyncio.run(verify("Istanbul 2-day itinerary"))
-
-# Print claim-by-claim breakdown
-for claim in report.atomic_claims:
-    print(f"[{claim.status.value}] {claim.text}")
-    if claim.note:
-        print(f"  Note: {claim.note}")
-
-# Full Markdown report
-print(render_markdown(report))
+        report = event["data"]
+        print(f"\nScore: {report.gotcha_score}/100")
 ```
 
 ---
 
-## The Adversarial Audit Protocol
+## Claim statuses
 
-This is ConsensusFlow's moat. The Auditor model receives this system prompt:
-
-> *"Your goal is to find contradictions. You are an expert forensic auditor. If you agree with the Proposer without finding a single flaw, your evaluation is considered 'Low Effort' and rejected. Find the friction."*
-
-Every claim is individually classified:
+Every claim the Auditor inspects receives one of five verdicts:
 
 | Status | Meaning |
 |--------|---------|
-| ✅ `VERIFIED` | Claim is factually correct |
-| 🔧 `CORRECTED` | Claim was wrong; corrected text provided |
-| 🔍 `NUANCED` | Correct but missing critical context |
-| ⚠️ `DISPUTED` | Cannot be confirmed; evidence is contradictory |
-| ❌ `REJECTED` | Demonstrably false |
+| `VERIFIED` | Factually correct and confirmed |
+| `CORRECTED` | Wrong — corrected text provided |
+| `NUANCED` | Correct but missing critical context |
+| `DISPUTED` | Cannot be confirmed; evidence contradictory |
+| `REJECTED` | Demonstrably false |
 
 ---
 
-## Early Exit & Cost Savings
+## Gotcha Score
 
-If the Auditor's review matches the Proposer's claims above a similarity threshold (default: 92%), the Resolver is **skipped entirely**.
-
-```
-User message: "This answer was verified by 2 models and achieved 100% consensus.
-               Saved ~33% on tokens."
-```
+Every report gets a **Gotcha Score** (0–100) — a single shareable metric:
 
 ```python
-report = asyncio.run(verify("Basic geography question..."))
+from consensusflow.core.scoring import compute_gotcha_score
+
+score = compute_gotcha_score(report)
+print(score.score)    # e.g. 84
+print(score.grade)    # e.g. "A"
+print(score.label)    # e.g. "Highly Reliable"
+print(score.share_text)
+# "ConsensusFlow caught 2 hallucinations! Score: 84/100 🟢"
+```
+
+| Score | Grade | Label |
+|-------|-------|-------|
+| 95–100 | A+ | Fully Verified |
+| 85–94 | A | Highly Reliable |
+| 72–84 | B | Mostly Reliable |
+| 55–71 | C | Use With Caution |
+| 35–54 | D | Significant Errors |
+| 0–34 | F | Do Not Trust |
+
+---
+
+## Early exit & cost savings
+
+When the Auditor agrees with the Proposer above a configurable similarity threshold (default 92%), the Resolver is **skipped entirely** — saving ~33% of tokens on that query.
+
+```python
+report = asyncio.run(verify("What is the chemical symbol for gold?"))
 
 if report.early_exit:
-    print(f"⚡ Early exit! Saved ~{report.saved_tokens} tokens")
-    print(f"   Similarity: {report.similarity_score:.1%}")
+    print(f"⚡ Resolver skipped — saved {report.saved_tokens} tokens")
+    print(f"   Estimated savings: ${report.saved_cost_usd:.5f}")
 ```
+
+From the benchmark run:
+
+| Mode | Cost/query |
+|------|-----------|
+| 2-model lightweight | **$0.036** |
+| 3-model full run | **$0.036** |
+
+*(Early exits at 4% in the benchmark; higher on simple/well-known facts.)*
 
 ---
 
 ## Benchmarks
 
-Tested on **AISTANBUL-50** — 50 queries where GPT-4o is known to hallucinate (March 2026):
+**CF-BENCH-50** — 50 general-domain hallucination traps, run March 2026:
 
-| Query Type | GPT-4o Alone | ConsensusFlow | Improvement |
-|-----------|:---:|:---:|:---:|
-| Historical dates | 72% | **97%** | +25% |
-| Opening hours | 58% | **94%** | +36% |
-| Prices & fees | 61% | **96%** | +35% |
-| Statistics | 69% | **91%** | +22% |
-| Geography | 74% | **98%** | +24% |
-| **Overall** | **67%** | **95%** | **+28%** |
+```
+Chain: gpt-4o → gemini/gemini-2.5-flash (2-model, no Claude required)
+```
 
-Run the benchmark yourself:
+| Category | Pass | Total | % |
+|----------|------|-------|---|
+| World Geography | 8 | 8 | 100% |
+| Science & Physics | 8 | 8 | 100% |
+| Technology & Computing | 8 | 8 | 100% |
+| History | 9 | 9 | 100% |
+| Literature & Art | 7 | 7 | 100% |
+| Medicine & Biology | 5 | 5 | 100% |
+| Economics & Business | 5 | 5 | 100% |
+| **Overall** | **50** | **50** | **100%** |
+
+Run it yourself:
 
 ```bash
 python examples/hallucination_benchmark.py --output results.json
@@ -213,67 +256,128 @@ python examples/hallucination_benchmark.py --output results.json
 
 ---
 
-## Supported Models
+## Advanced features
 
-ConsensusFlow uses [LiteLLM](https://litellm.ai) — any of its 100+ providers work:
+### Response caching
 
 ```python
-# Mix and match freely
-chain = [
-    "gpt-4o",                        # OpenAI
-    "gemini/gemini-2.5-flash",       # Google
-    "claude-3-7-sonnet-20250219",    # Anthropic
-]
+chain = SequentialChain(
+    chain=["gpt-4o", "gemini/gemini-2.5-flash"],
+    enable_cache=True,
+    cache_ttl=3600,       # 1 hour
+    cache_maxsize=256,
+)
+```
 
-# Or use local models
-chain = [
-    "ollama/llama3.3",
-    "ollama/mistral",
-    "ollama/llama3.3",
-]
+### Budget guard
+
+```python
+# Raise BudgetExceededError if cost exceeds $0.10 before resolver
+report = await verify("...", budget_usd=0.10)
+```
+
+### Webhook delivery
+
+```python
+# POST the full JSON report to your endpoint after every run
+chain = SequentialChain(
+    chain=["gpt-4o", "gemini/gemini-2.5-flash"],
+    webhook_url="https://yourapp.example.com/hooks/verification",
+)
+```
+
+### Fallback chains
+
+```python
+# If gpt-4o fails, fall back to gpt-4o-mini
+report = await verify(
+    "...",
+    chain=["gpt-4o", "gemini/gemini-2.5-flash"],
+    fallback_chain=["gpt-4o-mini", "gemini/gemini-2.5-flash"],
+)
+```
+
+### Local models (Ollama)
+
+```python
+report = await verify(
+    "...",
+    chain=["ollama/llama3.3", "ollama/mistral"],
+)
 ```
 
 ---
 
-## Project Structure
+## Supported models
+
+ConsensusFlow uses [LiteLLM](https://litellm.ai) — any of its 100+ providers work as a drop-in chain member:
+
+```
+OpenAI      gpt-4o, gpt-4o-mini, o1, o3-mini …
+Google      gemini/gemini-2.5-flash, gemini/gemini-1.5-pro …
+Anthropic   claude-3-7-sonnet-20250219, claude-3-5-sonnet-20241022 …
+Cohere      command-r-plus, command-r …
+Mistral     mistral/mistral-large-latest …
+Ollama      ollama/llama3.3, ollama/phi3 … (local, no API key)
+Azure       azure/gpt-4o …
+```
+
+---
+
+## Project structure
 
 ```
 consensusflow/
 ├── core/
-│   ├── engine.py       # SequentialChain + verify() entry point
-│   ├── protocol.py     # StepResult, AtomicClaim, VerificationReport
+│   ├── engine.py          # SequentialChain, verify(), stream()
+│   ├── protocol.py        # VerificationReport, AtomicClaim, StepResult
+│   ├── scoring.py         # GotchaScore, SavingsReport, compute_savings()
+│   ├── models.py          # Pydantic models
+│   ├── cache.py           # MemoryCache / NullCache
+│   └── storage.py         # Persistent run storage
 ├── providers/
-│   ├── litellm_client.py  # Async LiteLLM gateway with retry
+│   └── litellm_client.py  # Async LiteLLM gateway with retry + timeout
 ├── prompts/
-│   ├── adversarial.md  # "Negative Reward" Auditor system prompt
-│   ├── synthesis.md    # Resolver system prompt
-│   ├── extractor.md    # Atomic claim extractor prompt
-│   └── loader.py       # Prompt file loader
+│   ├── adversarial.md     # Auditor "Negative Reward" system prompt
+│   ├── synthesis.md       # Resolver system prompt
+│   ├── extractor.md       # Atomic claim extractor prompt
+│   └── loader.py
 ├── ui/
-│   ├── report.py       # Markdown / terminal / JSON renderers
-└── cli.py              # CLI entry point
+│   └── report.py          # Markdown / terminal / JSON renderers
+└── cli.py                 # CLI entry point
+backend/
+└── main.py                # FastAPI server (REST + streaming)
+frontend/
+└── src/                   # React dashboard (Vite)
 examples/
-├── travel_verify.py         # AISTANBUL demo
-└── hallucination_benchmark.py  # 50-query benchmark
-docs/                   # GitHub Pages website
+├── hallucination_benchmark.py   # CF-BENCH-50 benchmark runner
+└── travel_verify.py
+tests/                     # 214 passing tests
 ```
 
 ---
 
-## Contributing
+## Running the backend & frontend
 
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Install dev dependencies: `pip install -e ".[dev]"`
-4. Run tests: `pytest`
-5. Open a PR
+```bash
+# Backend (FastAPI)
+pip install -e ".[server]"
+uvicorn backend.main:app --reload
+# → http://localhost:8000
+
+# Frontend (React + Vite)
+cd frontend
+npm install
+npm run dev
+# → http://localhost:5173
+```
 
 ---
 
 ## License
 
-MIT © 2026 ConsensusFlow Contributors.
+MIT © 2026 ConsensusFlow.
 
----
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software to use, copy, modify, merge, publish, and distribute it, subject to the following conditions: the above copyright notice and this permission notice shall be included in all copies or substantial portions of the software.
 
-*Built to solve a real problem: the Trust Wall. If you're building AI products, you've hit it. This is the fix.*
+**This repository does not accept issues, pull requests, or merge requests.** The source code is published for transparency and personal/commercial use under the MIT licence. No support is provided.

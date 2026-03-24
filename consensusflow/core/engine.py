@@ -73,11 +73,18 @@ def _check_auditor_reliability(claims: list) -> str | None:
 # Token accounting (tiktoken)
 # ─────────────────────────────────────────────
 
+# Track which models have already triggered the heuristic warning (log once per model).
+_heuristic_warned: set[str] = set()
+
+
 def _count_tokens(text: str, model: str = "gpt-4o") -> int:
     """
     Count tokens accurately using tiktoken.
     Falls back to the 4-chars-per-token heuristic when tiktoken can't
     resolve the exact model encoding (e.g. Gemini, Claude).
+
+    Note: the heuristic is off by 30-50% for non-OpenAI models. A one-time
+    warning is logged per model name when the fallback is triggered.
     """
     try:
         import tiktoken  # type: ignore[import-untyped]
@@ -87,6 +94,14 @@ def _count_tokens(text: str, model: str = "gpt-4o") -> int:
             enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(text))
     except Exception:
+        if model not in _heuristic_warned:
+            _heuristic_warned.add(model)
+            log.warning(
+                "tiktoken unavailable or model %r not supported; using 4-char/token "
+                "heuristic — token/cost estimates may be off by 30-50%% for "
+                "non-OpenAI models (Gemini, Claude, Mistral, etc.).",
+                model,
+            )
         return max(1, len(text) // 4)
 
 
@@ -140,9 +155,22 @@ def _cosine_similarity(text_a: str, text_b: str) -> float:
 
 def _compute_similarity(text_a: str, text_b: str) -> float:
     """
-    Compute best available similarity score.
-    Uses TF cosine similarity (pure-Python, no ML deps).
-    The cosine metric is more sensitive to semantic overlap than Jaccard.
+    Compute best available similarity score for the early-exit check.
+
+    Uses pure-Python TF-weighted cosine similarity (no ML dependencies).
+    This is more sensitive to term overlap than Jaccard but is still a
+    **lexical** metric — it operates on token frequency, not meaning.
+
+    Known limitation: synonym swaps and paraphrases are NOT detected.
+    For example, "automobile" vs "car" scores near 0 despite being
+    semantically identical. As a result, the early-exit threshold may
+    not trigger even when proposer and auditor are in full agreement but
+    use different wording.
+
+    To improve accuracy, consider an optional semantic embedding backend
+    (e.g. sentence-transformers or an embedding API) which can be wired
+    in by replacing this function's return value with a cosine similarity
+    over dense vectors.
     """
     return _cosine_similarity(text_a, text_b)
 
@@ -188,6 +216,39 @@ def _parse_claims_from_json(raw: str) -> list[AtomicClaim]:
     ]
 
 
+def _extract_json_array(raw: str) -> str:
+    """
+    Robustly extract a JSON array from a string that may contain:
+      • Markdown fences (```json ... ``` or ``` ... ```)
+      • Prose before/after the fence
+      • Trailing text after the closing fence
+
+    Strategy (in order):
+      1. Grab the content inside the *first* ```json ... ``` or ``` ... ``` block.
+      2. If no fence, find the first '[' and its matching ']' via bracket counting.
+      3. Return the raw string as-is (let json.loads surface the real error).
+    """
+    # 1. Try to extract from a fenced code block (handles prose before/after)
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
+    if fence_match:
+        return fence_match.group(1).strip()
+
+    # 2. Find the outermost JSON array by bracket counting
+    start = raw.find("[")
+    if start != -1:
+        depth = 0
+        for i, ch in enumerate(raw[start:], start):
+            if ch == "[":
+                depth += 1
+            elif ch == "]":
+                depth -= 1
+                if depth == 0:
+                    return raw[start : i + 1]
+
+    # 3. Return as-is and let json.loads fail with a useful message
+    return raw.strip()
+
+
 def _parse_audit_from_json(raw: str, original_claims: list[AtomicClaim]) -> list[AtomicClaim]:
     """
     Expects the Auditor to return a JSON array:
@@ -196,9 +257,7 @@ def _parse_audit_from_json(raw: str, original_claims: list[AtomicClaim]) -> list
     Merges back into the original claim list.
     Sources (URLs) are stored in claim.sources for citation display.
     """
-    # Strip markdown fences (```json ... ``` or ``` ... ```)
-    cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip())
-    cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+    cleaned = _extract_json_array(raw)
     index   = {c.id: c for c in original_claims}
 
     try:
@@ -352,6 +411,9 @@ class SequentialChain:
 
         self._client = LiteLLMClient(timeout=timeout)
 
+        # Per-run cache-hit counter (reset on each .run() / .stream() call)
+        self._cache_hit_count: int = 0
+
         # Cache backend
         if enable_cache:
             self._cache: MemoryCache | NullCache = MemoryCache(
@@ -371,12 +433,31 @@ class SequentialChain:
         """
         Full async pipeline.  Returns a VerificationReport.
         """
+        self._cache_hit_count = 0  # reset per-run counter
+
         report = VerificationReport(
             prompt=prompt,
             chain_models=self.chain,
             penalty_weights=self.penalty_weights,
         )
         t_start = time.monotonic()
+
+        # ── Pre-flight budget check ───────────
+        # Estimate total pipeline cost from prompt size *before* any LLM call.
+        # Conservative model: full pipeline consumes ~6× the prompt input tokens
+        # (proposer out ≈ 2× in, auditor ≈ 2× in, resolver ≈ 2× in).
+        if self.budget_usd is not None:
+            from consensusflow.core.scoring import _estimate_cost_usd
+            from consensusflow.exceptions import BudgetExceededError
+            prompt_tokens = _count_tokens(prompt, self.chain[0])
+            estimated_total = prompt_tokens * 6
+            preflight_cost = _estimate_cost_usd(estimated_total, self.chain)
+            if preflight_cost >= self.budget_usd:
+                raise BudgetExceededError(preflight_cost, self.budget_usd)
+            log.debug(
+                "Pre-flight budget OK: ~%d estimated tokens, ~$%.5f vs limit $%.5f",
+                estimated_total, preflight_cost, self.budget_usd,
+            )
 
         # ── Step 1: Proposer ─────────────────
         log.info("Step 1 — Proposer (%s)", self.chain[0])
@@ -525,12 +606,24 @@ class SequentialChain:
             {"event": "resolver_chunk",   "data": "..."}
             {"event": "done",             "data": <VerificationReport>}
         """
+        self._cache_hit_count = 0  # reset per-run counter
+
         report = VerificationReport(
             prompt=prompt,
             chain_models=self.chain,
             penalty_weights=self.penalty_weights,
         )
         t_start = time.monotonic()
+
+        # ── Pre-flight budget check (streaming path) ──────────────────────────
+        if self.budget_usd is not None:
+            from consensusflow.core.scoring import _estimate_cost_usd
+            from consensusflow.exceptions import BudgetExceededError
+            prompt_tokens = _count_tokens(prompt, self.chain[0])
+            estimated_total = prompt_tokens * 6
+            preflight_cost = _estimate_cost_usd(estimated_total, self.chain)
+            if preflight_cost >= self.budget_usd:
+                raise BudgetExceededError(preflight_cost, self.budget_usd)
 
         # Proposer — streaming
         yield {"event": "status", "data": f"🧠 Proposer ({self.chain[0]}) thinking…"}
@@ -686,6 +779,7 @@ class SequentialChain:
         cached = await self._cache.get(cache_key)
         if cached is not None:
             log.debug("Cache HIT for step=%s model=%s", step, model)
+            self._cache_hit_count += 1
             response = cached
         else:
             response = await self._client.complete(model=model, system=system, user=user)

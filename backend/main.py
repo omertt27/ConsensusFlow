@@ -27,15 +27,27 @@ import asyncio
 import json
 import logging
 import os
+import re
+import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 log = logging.getLogger("consensusflow.backend")
+
+# ─────────────────────────────────────────────
+# Configuration from environment
+# ─────────────────────────────────────────────
+
+# Per-step LLM call timeout in seconds. Override via env var for slow models.
+_STEP_TIMEOUT: float = float(os.environ.get("CONSENSUSFLOW_STEP_TIMEOUT", "60"))
+
+# Regex for valid LiteLLM model name strings: "provider/model-name" or "model-name"
+_MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_\-./]*$")
 
 # ─────────────────────────────────────────────
 # Shared state (process-level singletons)
@@ -109,6 +121,27 @@ class VerifyRequest(BaseModel):
     enable_cache: bool = False
     webhook_url: str | None = None
 
+    @field_validator("chain", mode="before")
+    @classmethod
+    def validate_chain_models(cls, v: Any) -> Any:
+        if v is None:
+            return v
+        for m in v:
+            if not isinstance(m, str) or not _MODEL_NAME_RE.match(m):
+                raise ValueError(
+                    f"Invalid model name {m!r}. Expected format: 'provider/model' or 'model-name'."
+                )
+        return v
+
+    @field_validator("extractor_model", mode="before")
+    @classmethod
+    def validate_extractor_model(cls, v: Any) -> Any:
+        if not isinstance(v, str) or not _MODEL_NAME_RE.match(v):
+            raise ValueError(
+                f"Invalid extractor_model {v!r}. Expected format: 'provider/model' or 'model-name'."
+            )
+        return v
+
 
 class BatchVerifyRequest(BaseModel):
     prompts: list[str] = Field(..., min_length=1, max_length=20)
@@ -118,6 +151,27 @@ class BatchVerifyRequest(BaseModel):
     budget_usd: float | None = Field(default=None, ge=0.0)
     enable_cache: bool = True   # cache enabled by default for batch
     concurrency: int = Field(default=3, ge=1, le=10)
+
+    @field_validator("chain", mode="before")
+    @classmethod
+    def validate_chain_models(cls, v: Any) -> Any:
+        if v is None:
+            return v
+        for m in v:
+            if not isinstance(m, str) or not _MODEL_NAME_RE.match(m):
+                raise ValueError(
+                    f"Invalid model name {m!r}. Expected format: 'provider/model' or 'model-name'."
+                )
+        return v
+
+    @field_validator("extractor_model", mode="before")
+    @classmethod
+    def validate_extractor_model(cls, v: Any) -> Any:
+        if not isinstance(v, str) or not _MODEL_NAME_RE.match(v):
+            raise ValueError(
+                f"Invalid extractor_model {v!r}. Expected format: 'provider/model' or 'model-name'."
+            )
+        return v
 
 
 def _report_to_dict(report: Any) -> dict:
@@ -203,6 +257,7 @@ def _make_chain(req: Any) -> Any:
             budget_usd=req.budget_usd,
             enable_cache=req.enable_cache,
             webhook_url=getattr(req, "webhook_url", None),
+            timeout=_STEP_TIMEOUT,
         )
         # Override with the shared process-level cache so all requests benefit
         if req.enable_cache:
@@ -227,7 +282,7 @@ async def health() -> dict:
 
 
 @app.post("/api/verify", dependencies=[Depends(_verify_api_key)])
-async def verify_blocking(req: VerifyRequest) -> dict:
+async def verify_blocking(req: VerifyRequest, response: Response) -> dict:
     """Blocking verification — waits for the full pipeline then returns the report."""
     from consensusflow.exceptions import (
         BudgetExceededError,
@@ -238,11 +293,15 @@ async def verify_blocking(req: VerifyRequest) -> dict:
     try:
         report = await chain.run(req.prompt)
         result = _report_to_dict(report)
-        # Persist to SQLite
+        # Persist to SQLite — catch storage errors specifically so a DB hiccup
+        # never masks an otherwise successful verification.
         try:
             await _store.save(result)
+        except sqlite3.Error as store_exc:
+            log.warning("Failed to persist report to SQLite: %s", store_exc)
         except Exception as store_exc:
-            log.warning("Failed to persist report: %s", store_exc)
+            log.error("Unexpected error persisting report: %s", store_exc, exc_info=True)
+        response.headers["X-Cache-Hit"] = "true" if chain._cache_hit_count > 0 else "false"
         return result
 
     except BudgetExceededError as exc:
@@ -275,21 +334,40 @@ async def verify_stream(req: VerifyRequest) -> StreamingResponse:
     async def event_generator():
         try:
             async for event in chain.stream(req.prompt):
-                etype = event["event"]
-                data  = event["data"]
+                # Wrap each event individually — a serialization failure on one
+                # event should not kill the entire SSE connection.
+                try:
+                    etype = event["event"]
+                    data  = event["data"]
 
-                # Serialise the final report and persist it
-                if etype == "done" and isinstance(data, VerificationReport):
-                    result = _report_to_dict(data)
-                    try:
-                        await _store.save(result)
-                    except Exception as store_exc:
-                        log.warning("Failed to persist streaming report: %s", store_exc)
-                    payload = json.dumps({"event": "done", "data": result})
-                else:
-                    payload = json.dumps({"event": etype, "data": data})
+                    # Serialise the final report and persist it
+                    if etype == "done" and isinstance(data, VerificationReport):
+                        result = _report_to_dict(data)
+                        try:
+                            await _store.save(result)
+                        except sqlite3.Error as store_exc:
+                            log.warning("Failed to persist streaming report to SQLite: %s", store_exc)
+                        except Exception as store_exc:
+                            log.error("Unexpected error persisting streaming report: %s", store_exc, exc_info=True)
+                        result["x_cache_hit"] = chain._cache_hit_count > 0
+                        payload = json.dumps({"event": "done", "data": result})
+                    else:
+                        # Use default=str so non-serialisable data emits a string
+                        # rather than crashing the generator.
+                        payload = json.dumps({"event": etype, "data": data}, default=str)
 
-                yield f"data: {payload}\n\n"
+                    yield f"data: {payload}\n\n"
+
+                except Exception as event_exc:
+                    log.warning(
+                        "Failed to serialize stream event %r: %s",
+                        event.get("event", "?"), event_exc,
+                    )
+                    warning_payload = json.dumps({
+                        "event": "warning",
+                        "data": f"An event was skipped due to a serialization error: {event_exc}",
+                    })
+                    yield f"data: {warning_payload}\n\n"
 
         except Exception as exc:
             log.exception("Streaming error")
@@ -329,8 +407,10 @@ async def verify_batch(req: BatchVerifyRequest) -> dict:
                 result = _report_to_dict(report)
                 try:
                     await _store.save(result)
-                except Exception:
-                    pass
+                except sqlite3.Error as store_exc:
+                    log.warning("Failed to persist batch report[%d] to SQLite: %s", idx, store_exc)
+                except Exception as store_exc:
+                    log.error("Unexpected error persisting batch report[%d]: %s", idx, store_exc, exc_info=True)
                 return {"index": idx, "prompt": prompt, **result}
             except Exception as exc:
                 log.error("Batch item %d failed: %s", idx, exc)

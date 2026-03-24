@@ -14,6 +14,7 @@ from consensusflow.core.engine import (
     _jaccard_similarity,
     _parse_claims_from_json,
     _parse_audit_from_json,
+    _extract_json_array,
 )
 from consensusflow.core.protocol import AtomicClaim, ChainStatus, ClaimStatus
 
@@ -96,6 +97,66 @@ class TestParseAuditFromJson:
         original = [AtomicClaim(text="Some claim")]
         result = _parse_audit_from_json("not valid json {{", original)
         assert result[0].status == ClaimStatus.DISPUTED
+
+    # ── Gemini output pattern robustness ────────────────────────────
+    def _make_claims(self, ids=("c1",)):
+        return [AtomicClaim(id=cid, text=f"claim {cid}") for cid in ids]
+
+    def test_fenced_json_is_parsed(self):
+        """Gemini wraps output in ```json ... ``` fences."""
+        original = self._make_claims(["c1"])
+        original[0].id = "c1"
+        raw = '```json\n[{"id": "c1", "status": "VERIFIED", "note": "ok", "confidence": 1.0}]\n```'
+        result = _parse_audit_from_json(raw, original)
+        assert result[0].status == ClaimStatus.VERIFIED
+
+    def test_prose_before_fence_is_parsed(self):
+        """Gemini sometimes outputs prose then a fenced block."""
+        original = self._make_claims(["c1"])
+        raw = 'Here is my audit:\n```json\n[{"id": "c1", "status": "CORRECTED", "text": "fixed", "note": "n", "confidence": 0.9}]\n```'
+        result = _parse_audit_from_json(raw, original)
+        assert result[0].status == ClaimStatus.CORRECTED
+
+    def test_trailing_prose_after_fence_is_parsed(self):
+        """Gemini sometimes appends prose after the closing fence."""
+        original = self._make_claims(["c1"])
+        raw = '```json\n[{"id": "c1", "status": "NUANCED", "note": "ctx", "confidence": 0.8}]\n```\nHope this helps!'
+        result = _parse_audit_from_json(raw, original)
+        assert result[0].status == ClaimStatus.NUANCED
+
+    def test_unfenced_array_in_prose_is_parsed(self):
+        """No fences, but array is embedded in prose."""
+        original = self._make_claims(["c1"])
+        raw = 'My assessment: [{"id": "c1", "status": "VERIFIED", "note": "ok", "confidence": 1.0}] — done.'
+        result = _parse_audit_from_json(raw, original)
+        assert result[0].status == ClaimStatus.VERIFIED
+
+
+# ── _extract_json_array ──────────────────────────────────────
+
+class TestExtractJsonArray:
+    def test_plain_array(self):
+        assert _extract_json_array('[1,2,3]') == '[1,2,3]'
+
+    def test_fenced_block(self):
+        raw = '```json\n[1,2,3]\n```'
+        assert json.loads(_extract_json_array(raw)) == [1, 2, 3]
+
+    def test_prose_before_fence(self):
+        raw = 'Here:\n```json\n[1]\n```'
+        assert json.loads(_extract_json_array(raw)) == [1]
+
+    def test_trailing_text_after_fence(self):
+        raw = '```json\n[1]\n```\nDone.'
+        assert json.loads(_extract_json_array(raw)) == [1]
+
+    def test_no_fence_array_in_prose(self):
+        raw = 'Result: [42] end'
+        assert json.loads(_extract_json_array(raw)) == [42]
+
+    def test_nested_array(self):
+        raw = '```json\n[[1,2],[3,4]]\n```'
+        assert json.loads(_extract_json_array(raw)) == [[1, 2], [3, 4]]
 
 
 # ── SequentialChain ───────────────────────────────────────────

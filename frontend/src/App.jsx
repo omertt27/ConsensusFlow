@@ -34,6 +34,8 @@ const STATUS_STEP_MAP = {
 
 const HISTORY_KEY = 'consensusflow:history'
 const MAX_HISTORY = 50
+const CLAIMS_PER_PAGE = 20
+const HISTORY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -70,8 +72,29 @@ function timeAgo(iso) {
 // ── localStorage History ───────────────────────────────────────────────────────
 
 function loadHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') }
-  catch { return [] }
+  try {
+    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]')
+    const cutoff = Date.now() - HISTORY_MAX_AGE_MS
+    return raw.filter(h => !h.created_at || new Date(h.created_at).getTime() > cutoff)
+  } catch { return [] }
+}
+
+// ── Batch deduplication utility ────────────────────────────────────────────────
+// Removes duplicate prompts (case-insensitive, trimmed) before sending a batch
+// request. Preserves the first occurrence and its original index mapping.
+export function deduplicatePrompts(prompts) {
+  const seen = new Set()
+  const deduped = []
+  const indexMap = [] // maps deduped index → original index
+  prompts.forEach((p, i) => {
+    const key = p.trim().toLowerCase()
+    if (!seen.has(key)) {
+      seen.add(key)
+      deduped.push(p)
+      indexMap.push(i)
+    }
+  })
+  return { deduped, indexMap }
 }
 function saveToHistory(report) {
   try {
@@ -92,6 +115,33 @@ function saveToHistory(report) {
   } catch (e) { console.warn('History save failed:', e) }
 }
 function clearHistory() { localStorage.removeItem(HISTORY_KEY) }
+
+// ── Error Boundary ─────────────────────────────────────────────────────────────
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary] Component error:', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-display">
+          <AlertTriangle />
+          <strong>Something went wrong displaying this section:</strong>{' '}
+          {this.state.error?.message || 'Unknown error'}
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // ── History Panel ──────────────────────────────────────────────────────────────
 
@@ -178,6 +228,11 @@ export default function App() {
 
   const streamAbortCtrl = useRef(null)
 
+  // Abort any in-flight request when the component unmounts
+  useEffect(() => {
+    return () => { streamAbortCtrl.current?.abort() }
+  }, [])
+
   const activePipelineStep = report ? 4 : inferStep(statusText)
 
   const fetchCacheStats = useCallback(async () => {
@@ -196,7 +251,11 @@ export default function App() {
 
   useEffect(() => {
     fetchCacheStats()
-    const interval = setInterval(fetchCacheStats, 15000)
+    // Only poll while the tab is visible — avoids unnecessary requests
+    // when the user has switched to another tab or minimised the window.
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchCacheStats()
+    }, 15000)
     return () => clearInterval(interval)
   }, [fetchCacheStats])
 
@@ -393,7 +452,7 @@ export default function App() {
         )}
 
         {report && (
-          <>
+          <ErrorBoundary>
             <div className="report-grid">
               <ScoreCard score={report.gotcha_score} />
               <StatsCard report={report} />
@@ -401,7 +460,7 @@ export default function App() {
             <AnswerCard report={report} onCopy={handleCopy} copied={copied} />
             <StepsGrid steps={report.steps} />
             <ClaimsCard claims={report.atomic_claims} />
-          </>
+          </ErrorBoundary>
         )}
 
         {error && <ErrorDisplay message={error} />}
@@ -426,17 +485,27 @@ const ErrorDisplay = ({ message }) => (
 )
 
 function StreamPanel({ activeTab, onTabChange, content }) {
+  const tabs = ['all', 'proposer', 'auditor', 'resolver']
   return (
     <div className="stream-panel">
-      <div className="stream-tabs">
-        <div className={clsx('stream-tab', activeTab === 'all')} onClick={() => onTabChange('all')}>All</div>
-        <div className={clsx('stream-tab', activeTab === 'proposer')} onClick={() => onTabChange('proposer')}>Proposer</div>
-        <div className={clsx('stream-tab', activeTab === 'auditor')} onClick={() => onTabChange('auditor')}>Auditor</div>
-        <div className={clsx('stream-tab', activeTab === 'resolver')} onClick={() => onTabChange('resolver')}>Resolver</div>
+      <div className="stream-tabs" role="tablist" aria-label="Stream output filter">
+        {tabs.map(t => (
+          <div
+            key={t}
+            role="tab"
+            aria-selected={activeTab === t}
+            tabIndex={activeTab === t ? 0 : -1}
+            className={clsx('stream-tab', activeTab === t && 'active')}
+            onClick={() => onTabChange(t)}
+            onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && onTabChange(t)}
+          >
+            {t.charAt(0).toUpperCase() + t.slice(1)}
+          </div>
+        ))}
       </div>
-      <div className="stream-output">
+      <div role="tabpanel" aria-label={`${activeTab} stream output`} className="stream-output">
         {content[activeTab]}
-        <span className="cursor" />
+        <span className="cursor" aria-hidden="true" />
       </div>
     </div>
   )
@@ -594,11 +663,19 @@ function StepsGrid({ steps }) {
 
 function ClaimsCard({ claims }) {
   const [filter, setFilter] = useState('all')
+  const [page, setPage] = useState(0)
+
   const filteredClaims = claims.filter(c => {
     if (filter === 'all') return true
     if (filter === 'catches') return c.status !== 'VERIFIED'
     return c.status === filter
   })
+
+  const totalPages = Math.ceil(filteredClaims.length / CLAIMS_PER_PAGE)
+  const pagedClaims = filteredClaims.slice(page * CLAIMS_PER_PAGE, (page + 1) * CLAIMS_PER_PAGE)
+
+  // Reset to page 0 whenever the filter changes
+  const handleFilterChange = (f) => { setFilter(f); setPage(0) }
 
   const filters = ['all', 'catches', 'VERIFIED', 'CORRECTED', 'REJECTED', 'DISPUTED', 'NUANCED']
   const catchCount = claims.filter(c => c.status !== 'VERIFIED').length
@@ -612,7 +689,7 @@ function ClaimsCard({ claims }) {
             const count = f === 'all' ? claims.length : f === 'catches' ? catchCount : claims.filter(c => c.status === f).length
             if (count === 0 && f !== 'all' && f !== 'catches') return null
             return (
-              <button key={f} className={clsx('filter-btn', filter === f && 'active')} onClick={() => setFilter(f)}>
+              <button key={f} className={clsx('filter-btn', filter === f && 'active')} onClick={() => handleFilterChange(f)}>
                 {f === 'VERIFIED' && <CheckCircle2 size={12} />}
                 {f === 'catches' && <AlertTriangle size={12} />}
                 {f !== 'VERIFIED' && f !== 'catches' && f !== 'all' && <XCircle size={12} />}
@@ -624,8 +701,23 @@ function ClaimsCard({ claims }) {
         </div>
       </div>
       <div className="claims-list">
-        {filteredClaims.map(claim => <ClaimItem key={claim.id} claim={claim} />)}
+        {pagedClaims.map(claim => <ClaimItem key={claim.id} claim={claim} />)}
       </div>
+      {totalPages > 1 && (
+        <div className="claims-pagination">
+          <button
+            className="page-btn"
+            disabled={page === 0}
+            onClick={() => setPage(p => p - 1)}
+          >← Prev</button>
+          <span className="page-info">{page + 1} / {totalPages} ({filteredClaims.length} claims)</span>
+          <button
+            className="page-btn"
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage(p => p + 1)}
+          >Next →</button>
+        </div>
+      )}
     </div>
   )
 }
@@ -636,7 +728,11 @@ function ClaimItem({ claim }) {
     <div className="claim-item">
       <div className="claim-header">
         <p className="claim-text">{claim.text}</p>
-        <div className={`claim-status-badge ${claim.status}`}>
+        <div
+          className={`claim-status-badge ${claim.status}`}
+          title={claim.status.replace('_', ' ')}
+          aria-label={`Claim status: ${claim.status.replace('_', ' ')}`}
+        >
           {claim.status.replace('_', ' ')}
         </div>
       </div>
